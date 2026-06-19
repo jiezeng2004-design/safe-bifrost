@@ -8,3 +8,6 @@ release/
 safe-bifrost-release.zip
 safe-bifrost-release.tar.gz
 safe-bifrost-*.tgz
+.local/
+*.local.cmd
+*.local.ps1

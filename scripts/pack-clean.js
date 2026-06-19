@@ -18,6 +18,7 @@ const archivePath = resolve(root, "safe-bifrost-release.tar.gz");
 
 const include = [
   "dist",
+  "docs",
   "examples",
   "scripts",
   "src",
@@ -72,11 +73,23 @@ if (badReleaseEntries.length > 0) {
 }
 
 console.log("[pack-clean] Creating tar.gz archive...");
-execFileSync("tar", ["-czf", archivePath, "-C", releaseDir, "."], {
+
+// Convert Windows paths to WSL/Linux paths when tar is a Unix binary
+function toTarPath(p) {
+  if (process.platform === "win32") {
+    return p;
+  }
+  return p.replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`).replace(/\\/g, "/");
+}
+
+const tarArchivePath = toTarPath(archivePath);
+const tarReleaseDir = toTarPath(releaseDir);
+
+execFileSync("tar", ["-czf", tarArchivePath, "-C", tarReleaseDir, "."], {
   stdio: "inherit",
 });
 
-const archiveEntries = execFileSync("tar", ["-tzf", archivePath], {
+const archiveEntries = execFileSync("tar", ["-tzf", tarArchivePath], {
   encoding: "utf-8",
 })
   .split(/\r?\n/)

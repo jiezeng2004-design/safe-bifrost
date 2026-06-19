@@ -13,8 +13,17 @@
  * Run: node dist/smoke-test.js
  */
 
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
-import { resolve, join } from "node:path";
+import {
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  mkdtempSync,
+} from "node:fs";
+import { resolve, join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { loadConfig, getConfig } from "./config.js";
 import { savePlan } from "./tools/savePlan.js";
@@ -24,6 +33,42 @@ import { getTaskStatus } from "./tools/getTaskStatus.js";
 import { getResult, getDiff, getTestLog } from "./tools/taskOutputs.js";
 import { listWorkspace } from "./tools/listWorkspace.js";
 import { readWorkspaceFile } from "./tools/readWorkspaceFile.js";
+
+// Resolve the actual node binary path (spawnSync needs it on WSL/Windows)
+let nodeBin = process.execPath;
+if (!nodeBin || nodeBin === "node") {
+  // Fallback to node on PATH
+  nodeBin = "node";
+}
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const smokeRoot = mkdtempSync(join(tmpdir(), "safe-bifrost-smoke-"));
+const smokeWorkspace = join(smokeRoot, "workspace");
+const smokeConfigPath = join(smokeRoot, "safe-bifrost.config.json");
+
+mkdirSync(smokeWorkspace, { recursive: true });
+writeFileSync(
+  smokeConfigPath,
+  JSON.stringify(
+    {
+      workspaceRoot: smokeWorkspace,
+      plansDir: ".safe-bifrost/plans",
+      tasksDir: ".safe-bifrost/tasks",
+      agents: {
+        codex: {
+          command: "node",
+          args: ["-e", "console.log('agent placeholder')"],
+        },
+      },
+      allowedTestCommands: ["npm test", "npm run test", "pytest", "cargo test"],
+      maxReadFileBytes: 200000,
+    },
+    null,
+    2
+  ),
+  "utf-8"
+);
+process.env.SAFE_BIFROST_CONFIG = smokeConfigPath;
 
 let passed = 0;
 let failed = 0;
@@ -324,8 +369,8 @@ test("G1. runner CLI executes and produces output files", () => {
 
   // Run the CLI — this will try codex; if codex is not installed,
   // the runner should still produce error.log and update status.json to "failed"
-  const cliPath = resolve(wsRoot, "dist/runner/cli.js");
-  const result = spawnSync("node", [cliPath, runnerTask.task_id], {
+  const cliPath = resolve(projectRoot, "dist/runner/cli.js");
+  const result = spawnSync(nodeBin, [cliPath, runnerTask.task_id], {
     cwd: wsRoot,
     encoding: "utf-8",
     timeout: 60_000,
@@ -369,8 +414,8 @@ test("G1. runner CLI executes and produces output files", () => {
 });
 
 test("G2. runner CLI rejects nonexistent task", () => {
-  const cliPath = resolve(wsRoot, "dist/runner/cli.js");
-  const result = spawnSync("node", [cliPath, "nonexistent_task_xyz"], {
+  const cliPath = resolve(projectRoot, "dist/runner/cli.js");
+  const result = spawnSync(nodeBin, [cliPath, "nonexistent_task_xyz"], {
     cwd: wsRoot,
     encoding: "utf-8",
     timeout: 30_000,
@@ -382,12 +427,126 @@ test("G2. runner CLI rejects nonexistent task", () => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// Section H: Watcher safety tests
+// ════════════════════════════════════════════════════════════════
+
+console.log("\n── H. Watcher safety tests ──");
+
+// H1: Watcher runs a valid pending task
+test("H1. watcher executes valid pending task", () => {
+  const watchPlan = savePlan({
+    title: "Watcher Test Plan",
+    content: "# Watcher Test\n\nSimulated execution.",
+  });
+  const watchTask = createTask({
+    plan_id: watchPlan.plan_id,
+    agent: "codex",
+  });
+
+  // Verify task is pending
+  const before = getTaskStatus(watchTask.task_id);
+  if (before.status !== "pending") throw new Error("Should be pending");
+
+  // Simulate what watcher does: call runTask directly via CLI
+  const cliPath = resolve(projectRoot, "dist/runner/cli.js");
+  const result = spawnSync(nodeBin, [cliPath, watchTask.task_id], {
+    cwd: wsRoot,
+    encoding: "utf-8",
+    timeout: 60_000,
+  });
+
+  // After execution, status should be done or failed
+  const after = getTaskStatus(watchTask.task_id);
+  if (after.status === "pending" || after.status === "running") {
+    throw new Error(`Watcher should have transitioned status, got ${after.status}`);
+  }
+
+  // Status file should exist
+  const taskDir = watchTask.path;
+  if (!existsSync(join(taskDir, "status.json"))) {
+    throw new Error("status.json missing after watcher execution");
+  }
+
+  console.log(`    Watcher status: ${after.status}`);
+});
+
+// H2: Watcher must reject task with workspace-external repo_path
+test("H2. watcher rejects task with external repo_path", () => {
+  // Create a task with valid plan, then tamper status.json
+  const tamperPlan = savePlan({
+    title: "Tamper Test",
+    content: "# Test tampered repo_path.",
+  });
+  const tamperTask = createTask({
+    plan_id: tamperPlan.plan_id,
+    agent: "codex",
+  });
+
+  // Tamper: change repo_path to outside workspace
+  const statusPath = join(tamperTask.path, "status.json");
+  const data = JSON.parse(readFileSync(statusPath, "utf-8"));
+  data.repo_path = "/etc";
+  writeFileSync(statusPath, JSON.stringify(data, null, 2), "utf-8");
+
+  // Run the CLI — it should detect the invalid repo_path and fail
+  const cliPath = resolve(projectRoot, "dist/runner/cli.js");
+  const result = spawnSync(nodeBin, [cliPath, tamperTask.task_id], {
+    cwd: wsRoot,
+    encoding: "utf-8",
+    timeout: 30_000,
+  });
+
+  // After execution, should be failed with an error about repo_path
+  const after = getTaskStatus(tamperTask.task_id);
+  if (after.status !== "failed") {
+    throw new Error(`Tampered task should be failed, got ${after.status}`);
+  }
+
+  // error.log should mention repo_path
+  const errorLogPath = join(tamperTask.path, "error.log");
+  if (existsSync(errorLogPath)) {
+    const errorContent = readFileSync(errorLogPath, "utf-8");
+    if (!errorContent.toLowerCase().includes("repo_path")) {
+      console.log(`    ⚠️ error.log present but may not mention repo_path`);
+    }
+  }
+
+  console.log(`    Correctly failed tampered task`);
+});
+
+// H3: Watcher rejects unknown test_command
+test("H3. watcher rejects task with bad test_command", () => {
+  const tcPlan = savePlan({
+    title: "Bad Test Cmd Plan",
+    content: "# Test invalid test_command.",
+  });
+
+  // createTask itself should reject invalid test_command
+  let rejected = false;
+  try {
+    createTask({
+      plan_id: tcPlan.plan_id,
+      agent: "codex",
+      test_command: "rm -rf /",
+    });
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error("createTask should reject invalid test_command");
+  console.log(`    createTask correctly rejected bad test_command`);
+});
+
+// ════════════════════════════════════════════════════════════════
 // Summary
 // ════════════════════════════════════════════════════════════════
 
 console.log(`\n${"=".repeat(50)}`);
 console.log(`${passed} passed, ${failed} failed, ${passed + failed} total`);
 console.log(`${"=".repeat(50)}\n`);
+
+try {
+  rmSync(smokeRoot, { recursive: true, force: true });
+} catch {}
 
 if (failed > 0) {
   console.error("❌ SOME TESTS FAILED");

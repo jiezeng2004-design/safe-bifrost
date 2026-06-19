@@ -1,5 +1,5 @@
 {
-  "workspaceRoot": "D:/ai_agent/test-project",
+  "workspaceRoot": "D:/path/to/test-project",
   "plansDir": ".safe-bifrost/plans",
   "tasksDir": ".safe-bifrost/tasks",
   "agents": {

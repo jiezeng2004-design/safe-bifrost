@@ -11,6 +11,7 @@
   },
   "files": [
     "dist/",
+    "docs/",
     "src/",
     "examples/",
     "scripts/",
@@ -21,10 +22,14 @@
   "scripts": {
     "build": "node ./node_modules/typescript/bin/tsc",
     "start": "node dist/index.js",
+    "start:http": "node dist/httpServer.js",
     "dev": "npm run build && node dist/index.js",
     "runner": "node dist/runner/cli.js",
+    "watch": "node dist/runner/watch.js",
+    "doctor": "node dist/doctor.js",
     "test": "node dist/smoke-test.js",
     "test:mcp": "npm run build && node scripts/mcp-smoke.js",
+    "test:http-mcp": "npm run build && node scripts/http-mcp-smoke.js",
     "pretest": "npm run build",
     "pack:clean": "npm run build && node scripts/pack-clean.js",
     "verify:package": "npm run build && npm pack --dry-run"

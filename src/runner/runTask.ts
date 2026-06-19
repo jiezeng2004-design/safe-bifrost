@@ -94,7 +94,11 @@ export function runTask(taskId: string): TaskRunResult {
 
     const stdout = result.stdout || "";
     const stderr = result.stderr || "";
+    const spawnError = result.error instanceof Error ? result.error.message : "";
     const exitCode = result.status ?? 1;
+    const fullStderr = spawnError
+      ? `${stderr}\n\nSpawn error: ${spawnError}`.trim()
+      : stderr;
 
     // ── Phase 5: Collect outputs ──
     const gitDiff = captureGitDiff(repoPath);
@@ -105,7 +109,7 @@ export function runTask(taskId: string): TaskRunResult {
       agentName,
       exitCode,
       stdout,
-      stderr
+      fullStderr
     );
 
     writeFileSync(join(taskDir, "git.diff"), gitDiff, "utf-8");
@@ -117,7 +121,11 @@ export function runTask(taskId: string): TaskRunResult {
       updateStatus(taskDir, "done");
       return { task_id: taskId, status: "done", error: null };
     } else {
-      const errMsg = `Agent exited with code ${exitCode}\nStderr: ${stderr.slice(0, 1000)}`;
+      const errMsg = [
+        `Agent exited with code ${exitCode}`,
+        stderr ? `Stderr: ${stderr.slice(0, 1000)}` : "Stderr: (empty)",
+        spawnError ? `Spawn error: ${spawnError}` : "",
+      ].filter(Boolean).join("\n");
       writeFileSync(join(taskDir, "error.log"), errMsg, "utf-8");
       updateStatus(taskDir, "failed", errMsg);
       return { task_id: taskId, status: "failed", error: errMsg };
@@ -192,10 +200,10 @@ function captureTestLog(repoPath: string, testCommand: string): string {
     guardTestCommand(testCommand, config);
 
     const parts = testCommand.split(" ");
-    const cmd = parts[0];
+    const cmd = process.platform === "win32" && parts[0] === "npm" ? "npm.cmd" : parts[0];
     const args = parts.slice(1);
 
-    const result = spawnSync(cmd, args, {
+    const result = spawnTrustedTestCommand(cmd, args, {
       cwd: repoPath,
       encoding: "utf-8",
       timeout: 120_000,
@@ -205,6 +213,7 @@ function captureTestLog(repoPath: string, testCommand: string): string {
     return [
       `$ ${testCommand}`,
       `Exit code: ${result.status}`,
+      result.error instanceof Error ? `Spawn error: ${result.error.message}` : "",
       "",
       result.stdout || "(no output)",
       result.stderr ? `\nSTDERR:\n${result.stderr}` : "",
@@ -212,6 +221,18 @@ function captureTestLog(repoPath: string, testCommand: string): string {
   } catch (err) {
     return `Test command failed: ${err instanceof Error ? err.message : String(err)}`;
   }
+}
+
+function spawnTrustedTestCommand(
+  command: string,
+  args: string[],
+  options: Parameters<typeof spawnSync>[2]
+): ReturnType<typeof spawnSync> {
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(command)) {
+    return spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", command, ...args], options);
+  }
+
+  return spawnSync(command, args, options);
 }
 
 function buildResultMarkdown(
@@ -222,24 +243,56 @@ function buildResultMarkdown(
   stdout: string,
   stderr: string
 ): string {
+  const status = exitCode === 0 ? "done" : "failed";
+  const exitLabel = exitCode === null ? "unknown (signal)" : String(exitCode);
+
+  // Extract file changes from stdout if available
+  const filesMatch = stdout.match(/(?:Files (?:modified|changed)|Modifying)[:\s]*\n?((?:\s*[-*]\s*.+\n?)+)/i);
+  const filesChanged = filesMatch ? filesMatch[1].trim() : "unknown";
+
   return [
-    "# Execution Result",
+    "# Safe-Bifrost Task Result",
     "",
-    `- **Task**: ${taskId}`,
-    `- **Plan**: ${planId}`,
-    `- **Agent**: ${agent}`,
-    `- **Exit Code**: ${exitCode}`,
-    `- **Completed**: ${new Date().toISOString()}`,
+    "## Status",
+    status,
     "",
-    "## stdout",
+    "## Agent",
+    agent,
+    "",
+    "## Plan",
+    planId,
+    "",
+    "## Exit Code",
+    exitLabel,
+    "",
+    "## Completed",
+    new Date().toISOString(),
+    "",
+    "## Files changed",
+    filesChanged,
+    "",
+    "## Test result",
+    exitCode === 0 ? "passed" : "failed",
+    "",
+    "## Summary",
+    exitCode === 0
+      ? "Agent executed successfully."
+      : `Agent exited with code ${exitLabel}.${stderr ? " See stderr for details." : ""}`,
+    "",
+    "## Risks",
+    exitCode !== 0 ? "- Agent execution failed — verify git.diff and error.log" : "- Review git.diff to confirm only expected files were modified",
+    "",
+    "---",
+    "",
+    "## Agent stdout",
     "",
     "```",
-    stdout.slice(0, 50000),
+    stdout.slice(0, 50000) || "(no output)",
     "```",
     "",
-    stderr
-      ? ["## stderr", "", "```", stderr.slice(0, 10000), "```"].join("\n")
-      : "## stderr\n\n(empty)",
+    stderr && stderr.trim()
+      ? ["## Agent stderr", "", "```", stderr.slice(0, 10000), "```"].join("\n")
+      : "## Agent stderr\n\n(empty)",
   ].join("\n");
 }
 

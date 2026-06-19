@@ -1,0 +1,39 @@
+# Safe-Bifrost tunnel-client example configuration
+#
+# This is an example only. Do not commit real keys, tunnel IDs, account names,
+# workspace IDs, or local private paths.
+
+# Mode A: stdio
+#
+# On Windows, prefer the wrapper. It sets SAFE_BIFROST_CONFIG and starts the
+# MCP server from the Safe-Bifrost project root.
+#
+# tunnel-client init \
+#   --sample sample_mcp_stdio_local \
+#   --profile safe-bifrost \
+#   --tunnel-id tunnel_xxx \
+#   --mcp-command "C:/path/to/safe-bifrost/scripts/safe-bifrost-mcp-stdio.cmd"
+
+mcp:
+  commands:
+    - channel: main
+      command: "C:/path/to/safe-bifrost/scripts/safe-bifrost-mcp-stdio.cmd"
+
+# Mode B: HTTP
+#
+# Start Safe-Bifrost HTTP first:
+#
+#   npm run start:http
+#
+# Then point tunnel-client at it:
+#
+#   tunnel-client init \
+#     --sample sample_mcp_with_dcr \
+#     --profile safe-bifrost-http \
+#     --tunnel-id tunnel_xxx \
+#     --mcp-server-url "http://127.0.0.1:7331/mcp"
+#
+# mcp:
+#   server_urls:
+#     - channel: main
+#       url: "http://127.0.0.1:7331/mcp"

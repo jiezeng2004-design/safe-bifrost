@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Safe-Bifrost ChatGPT connector demo</title>
+  <desc id="desc">A sanitized demo showing ChatGPT calling Safe-Bifrost list_workspace and receiving a workspace file list.</desc>
+  <rect width="1280" height="720" fill="#f7f7f5"/>
+  <rect x="40" y="38" width="260" height="644" rx="16" fill="#ffffff" stroke="#deded8"/>
+  <text x="72" y="88" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" font-weight="700" fill="#1f1f1f">ChatGPT</text>
+  <rect x="72" y="128" width="188" height="44" rx="10" fill="#eeeeea"/>
+  <text x="96" y="157" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#333">safe-bifrost</text>
+  <rect x="340" y="48" width="900" height="624" rx="22" fill="#ffffff" stroke="#e2e2dc"/>
+  <text x="380" y="96" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" fill="#202020">Safe-Bifrost Connector</text>
+  <rect x="672" y="126" width="500" height="88" rx="26" fill="#f0f0ec"/>
+  <text x="704" y="158" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#202020">Use safe-bifrost.list_workspace</text>
+  <text x="704" y="188" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" fill="#202020">to list the configured workspace.</text>
+  <rect x="410" y="270" width="620" height="274" rx="18" fill="#fafafa" stroke="#d9d9d2"/>
+  <text x="448" y="318" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="24" font-weight="700" fill="#1f1f1f">Workspace files</text>
+  <line x1="448" y1="348" x2="990" y2="348" stroke="#ddddda"/>
+  <text x="448" y="388" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#2a2a2a">Name</text>
+  <text x="720" y="388" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#2a2a2a">Type</text>
+  <text x="850" y="388" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#2a2a2a">Size</text>
+  <rect x="448" y="414" width="178" height="34" rx="8" fill="#ececea"/>
+  <text x="462" y="437" font-family="JetBrains Mono,Consolas,monospace" font-size="17" fill="#222">README.md</text>
+  <text x="720" y="437" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#222">file</text>
+  <text x="850" y="437" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#222">1.2 KB</text>
+  <rect x="448" y="464" width="164" height="34" rx="8" fill="#ececea"/>
+  <text x="462" y="487" font-family="JetBrains Mono,Consolas,monospace" font-size="17" fill="#222">package.json</text>
+  <text x="720" y="487" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#222">file</text>
+  <text x="850" y="487" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#222">320 B</text>
+  <rect x="410" y="584" width="620" height="52" rx="16" fill="#f3f8f5" stroke="#b9dfc7"/>
+  <text x="440" y="617" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" fill="#176b38">ChatGPT can plan; Safe-Bifrost stores tasks; local agents execute safely.</text>
+</svg>
