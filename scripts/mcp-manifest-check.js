@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -8,25 +9,26 @@ import { CHATGPT_CORE_TOOL_NAMES } from "../dist/tools/toolCatalog.js";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const jsonOnly = process.argv.includes("--json");
 const expectedTools = [...CHATGPT_CORE_TOOL_NAMES];
+const defaultConfigPath = resolve(root, "patchwarden.config.json");
+const transportEnv = {
+  ...process.env,
+  PATCHWARDEN_TOOL_PROFILE: "chatgpt_core",
+};
+if (process.env.PATCHWARDEN_CONFIG) {
+  transportEnv.PATCHWARDEN_CONFIG = process.env.PATCHWARDEN_CONFIG;
+} else if (existsSync(defaultConfigPath)) {
+  transportEnv.PATCHWARDEN_CONFIG = defaultConfigPath;
+} else {
+  delete transportEnv.PATCHWARDEN_CONFIG;
+}
 
-const transport = process.platform === "win32"
-  ? new StdioClientTransport({
-      command: "cmd.exe",
-      args: ["/d", "/c", resolve(root, "scripts", "patchwarden-mcp-stdio.cmd")],
-      cwd: root,
-      stderr: "pipe",
-    })
-  : new StdioClientTransport({
-      command: process.execPath,
-      args: [resolve(root, "dist", "index.js")],
-      cwd: root,
-      env: {
-        ...process.env,
-        PATCHWARDEN_CONFIG: resolve(root, "patchwarden.config.json"),
-        PATCHWARDEN_TOOL_PROFILE: "chatgpt_core",
-      },
-      stderr: "pipe",
-    });
+const transport = new StdioClientTransport({
+  command: process.execPath,
+  args: [resolve(root, "dist", "index.js")],
+  cwd: root,
+  env: transportEnv,
+  stderr: "pipe",
+});
 
 const client = new Client(
   { name: "patchwarden-manifest-check", version: "0.4.0" },

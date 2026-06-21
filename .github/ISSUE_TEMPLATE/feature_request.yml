@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a scoped capability that preserves PatchWarden's safety model.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety impact
+      description: Explain effects on workspace confinement, command allow-lists, credentials, and auditability.
+    validations:
+      required: true

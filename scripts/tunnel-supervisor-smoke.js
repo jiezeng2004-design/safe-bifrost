@@ -14,10 +14,19 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const temp = mkdtempSync(join(tmpdir(), "patchwarden-tunnel-smoke-"));
 const mockJs = join(temp, "mock-tunnel-client.js");
 const mockCmd = join(temp, "mock-tunnel-client.cmd");
+const mockConfig = join(temp, "patchwarden.config.json");
 const stateFile = join(temp, "attempt.txt");
 const secretMarker = "smoke-secret-must-not-appear";
 
 try {
+  writeFileSync(mockConfig, JSON.stringify({
+    workspaceRoot: temp,
+    plansDir: ".patchwarden/plans",
+    tasksDir: ".patchwarden/tasks",
+    toolProfile: "chatgpt_core",
+    agents: { smoke: { command: process.execPath, args: [] } },
+    allowedTestCommands: ["npm test"],
+  }, null, 2), "utf-8");
   writeFileSync(mockCmd, `@echo off\r\nnode "%MOCK_TUNNEL_JS%" %*\r\n`, "utf-8");
   writeFileSync(mockJs, `
 const fs=require('fs');
@@ -50,6 +59,7 @@ if(command==='run'){
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "start-patchwarden-tunnel.ps1"),
     "-TunnelId", "tunnel_smoke_fixture",
     "-TunnelClientExe", mockCmd,
+    "-ConfigPath", mockConfig,
     "-ProxyUrl", "http://127.0.0.1:1",
     "-ReconnectBaseSeconds", "1",
     "-ReconnectMaxSeconds", "1",

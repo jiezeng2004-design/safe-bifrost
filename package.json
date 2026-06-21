@@ -32,6 +32,7 @@
     "runner": "node dist/runner/cli.js",
     "watch": "node dist/runner/watch.js",
     "doctor": "node dist/doctor.js",
+    "doctor:ci": "node dist/doctor.js --allow-default-config",
     "test": "node dist/smoke-test.js && node scripts/lifecycle-smoke.js && node scripts/doctor-smoke.js && node scripts/tunnel-supervisor-smoke.js && node scripts/watcher-supervisor-smoke.js && node scripts/mcp-manifest-check.js && node scripts/brand-check.js",
     "test:lifecycle": "npm run build && node scripts/lifecycle-smoke.js",
     "test:doctor": "npm run build && node scripts/doctor-smoke.js",

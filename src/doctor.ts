@@ -65,6 +65,7 @@ function cmd(cmdStr: string): string {
 async function main() {
 
 console.log("PatchWarden Doctor\n");
+const allowDefaultConfig = process.argv.includes("--allow-default-config");
 
 // 1. Node version
 const nodeVer = process.version;
@@ -92,10 +93,14 @@ for (const p of configPaths) {
   if (existsSync(p)) { configPathUsed = p; break; }
 }
 
-check("Config file exists", configPathUsed !== "",
-  configPathUsed
-    ? configPathUsed
-    : 'Create one: cp examples/config.example.json patchwarden.config.json');
+const configDetail = configPathUsed
+  ? configPathUsed
+  : 'Create one: cp examples/config.example.json patchwarden.config.json';
+if (allowDefaultConfig) {
+  warnCheck("Config file exists", configPathUsed !== "", configDetail);
+} else {
+  check("Config file exists", configPathUsed !== "", configDetail);
+}
 
 // 5. PATCHWARDEN_CONFIG env
 if (process.env.PATCHWARDEN_CONFIG) {

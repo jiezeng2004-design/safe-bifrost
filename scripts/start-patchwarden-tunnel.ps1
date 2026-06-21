@@ -4,6 +4,7 @@ param(
   [string]$ProxyUrl = $(if ($env:HTTPS_PROXY) { $env:HTTPS_PROXY } else { "http://127.0.0.1:7892" }),
   [string]$TunnelClientExe = $env:TUNNEL_CLIENT_EXE,
   [string]$OpencodeBin = $env:OPENCODE_BIN_DIR,
+  [string]$ConfigPath = $env:PATCHWARDEN_CONFIG,
   [string]$CredentialPath = $(if ($env:PATCHWARDEN_CREDENTIAL_PATH) { $env:PATCHWARDEN_CREDENTIAL_PATH } else { Join-Path $env:APPDATA "patchwarden\control-plane-api-key.dpapi" }),
   [int]$ReconnectBaseSeconds = 5,
   [int]$ReconnectMaxSeconds = 30,
@@ -18,7 +19,9 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$ConfigPath = Join-Path $ProjectRoot "patchwarden.config.json"
+if (-not $ConfigPath) {
+  $ConfigPath = Join-Path $ProjectRoot "patchwarden.config.json"
+}
 $McpStdioLauncher = Join-Path $ProjectRoot "scripts\patchwarden-mcp-stdio.cmd"
 $McpStdioLauncherForTunnel = $McpStdioLauncher -replace "\\", "/"
 $OpencodeConfigHome = Join-Path $env:LOCALAPPDATA "patchwarden\opencode-config"
