@@ -1,6 +1,6 @@
 # PatchWarden
 
-Development version: **v0.4.0** (not yet published). See the
+Current release: **v0.4.0**. See the
 [v0.4.0 release notes](docs/release-v0.4.0.md).
 
 > **Renamed in v0.4.0:** PatchWarden replaces the former Safe-Bifrost package.
