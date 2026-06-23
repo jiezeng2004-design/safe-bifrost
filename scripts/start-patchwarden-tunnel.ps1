@@ -461,23 +461,23 @@ function Set-ProfileHealthListenAddr {
   if (-not (Test-Path -LiteralPath $ProfilePath)) { return }
   $content = Get-Content -LiteralPath $ProfilePath -Raw
   $target = [Regex]::Escape($HealthListenAddr)
-  # Already correct — nothing to do (idempotent)
+  # Already correct; nothing to do (idempotent)
   if ($content -match "listen_addr:\s*`"$target`"") { return }
-  # Has a health block with a different listen_addr — replace the value
+  # Has a health block with a different listen_addr; replace the value
   if ($content -match 'listen_addr:\s*"[^"]*"') {
     $updated = $content -replace '(listen_addr:\s*)"[^"]*"', "`$1`"$HealthListenAddr`""
     Set-Content -LiteralPath $ProfilePath -Value $updated -Encoding UTF8 -NoNewline
     Write-Host "[config] Updated health.listen_addr to $HealthListenAddr in $Profile"
     return
   }
-  # Has a health: section but no listen_addr — insert after health:
+  # Has a health: section but no listen_addr; insert after health:
   if ($content -match '(?m)^health:') {
     $updated = $content -replace '(?m)^(health:.*)$', "`$1`n  listen_addr: `"$HealthListenAddr`""
     Set-Content -LiteralPath $ProfilePath -Value $updated -Encoding UTF8 -NoNewline
     Write-Host "[config] Added health.listen_addr: $HealthListenAddr to existing health block in $Profile"
     return
   }
-  # No health block at all — append one
+  # No health block at all; append one
   $trimmed = $content.TrimEnd()
   $updated = "$trimmed`n`nhealth:`n  listen_addr: `"$HealthListenAddr`"`n"
   Set-Content -LiteralPath $ProfilePath -Value $updated -Encoding UTF8 -NoNewline

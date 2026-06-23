@@ -150,7 +150,7 @@ function Get-ModeStatus {
   $pidFilePath = Join-Path $Definition.RuntimeDirectory "tunnel-client.pid"
   $state = Read-JsonFileSafe -Path $statusPath
 
-  # ── Tier 1: Health endpoint probe (highest priority) ─────────
+  # Tier 1: Health endpoint probe (highest priority)
   $healthUrl = Read-FileLineSafe -Path $healthUrlFile
   $healthProbe = $null
   foreach ($candidateUrl in @($healthUrl, $Definition.HealthBaseUrl) | Select-Object -Unique) {
@@ -164,26 +164,26 @@ function Get-ModeStatus {
   $healthAlive = [bool]($healthProbe -and $healthProbe.reachable -and $healthProbe.healthz)
   $healthReady = [bool]($healthProbe -and $healthProbe.readyz)
 
-  # ── Tier 2: PID file → process check ─────────────────────────
+  # Tier 2: PID file to process check
   $pidFromFile = Get-PidFromFile -PidFilePath $pidFilePath
   $pidProcess = if ($pidFromFile) { Get-ProcessByIdSafe -ProcessId $pidFromFile } else { $null }
   $pidProcessAlive = Test-TunnelProcessForMode -Process $pidProcess -Definition $Definition
 
-  # ── Tier 3: JSON PID → process check (existing) ──────────────
+  # Tier 3: JSON PID to process check (existing)
   $jsonPid = if ($state -and $state.pid) { [int]$state.pid } else { $null }
   $jsonProcess = if ($jsonPid) { Get-ProcessByIdSafe -ProcessId $jsonPid } else { $null }
   $jsonProcessAlive = Test-TunnelProcessForMode -Process $jsonProcess -Definition $Definition
 
-  # ── Tier 4: Exact process scan for orphaned profile runs ─────
+  # Tier 4: Exact process scan for orphaned profile runs
   $matchingProcesses = @(Get-MatchingTunnelProcesses -Definition $Definition)
   $scannedProcess = $matchingProcesses | Select-Object -First 1
   $scannedProcessAlive = [bool]$scannedProcess
 
-  # ── Best-effort PID ──────────────────────────────────────────
+  # Best-effort PID
   $bestPid = if ($pidProcessAlive) { $pidFromFile } elseif ($jsonProcessAlive) { $jsonPid } elseif ($scannedProcessAlive) { [int]$scannedProcess.ProcessId } else { $null }
   $bestProcessAlive = $pidProcessAlive -or $jsonProcessAlive -or $scannedProcessAlive
 
-  # ── Resolve status and readiness ─────────────────────────────
+  # Resolve status and readiness
   $reportedStatus = if ($state -and $state.status) { [string]$state.status } else { "not_started" }
 
   if ($healthAlive) {
@@ -245,7 +245,7 @@ function Show-Status {
       Write-Host "[$($row.mode)] $($row.last_error)" -ForegroundColor Yellow
     }
     if ($row.ready -and $row.health_alive -and -not $row.process_alive) {
-      Write-Host "[$($row.mode)] Health endpoint ready — tunnel is alive but PID tracking may be stale." -ForegroundColor DarkCyan
+      Write-Host "[$($row.mode)] Health endpoint ready; tunnel is alive but PID tracking may be stale." -ForegroundColor DarkCyan
     }
   }
 }
