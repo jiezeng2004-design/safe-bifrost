@@ -126,8 +126,10 @@ try {
     "read_workspace_file",
     "retry_task",
     "run_verification",
+    "safe_status",
     "save_plan",
     "search_workspace",
+    "sync_file",
     "wait_for_task",
   ];
   if (JSON.stringify(names) !== JSON.stringify(expected)) {
@@ -139,7 +141,7 @@ try {
   if (!tools._meta || typeof tools._meta.tool_manifest_sha256 !== "string" || tools._meta.tool_manifest_sha256.length !== 64) {
     throw new Error(`tools/list _meta missing manifest hash: ${JSON.stringify(tools._meta || null)}`);
   }
-  if (tools._meta.tool_profile !== "full" || tools._meta.tool_count !== 28) {
+  if (tools._meta.tool_profile !== "full" || tools._meta.tool_count !== 30) {
     throw new Error(`tools/list _meta profile/count mismatch: ${JSON.stringify(tools._meta)}`);
   }
   if (typeof tools._meta.schema_epoch !== "string" || typeof tools._meta.server_version !== "string") {
@@ -210,7 +212,7 @@ try {
     test_command: "npm test",
   });
   if (
-    task.server_version !== "0.6.0" ||
+    task.server_version !== "0.6.1" ||
     !/^[a-f0-9]{64}$/.test(task.tool_manifest_sha256 || "") ||
     task.next_tool_call?.name !== "wait_for_task" ||
     task.next_tool_call?.arguments?.timeout_seconds !== 25
@@ -389,7 +391,7 @@ try {
   await disabledClient.close();
   ok("chatgpt_direct disabled exposes only health_check with diagnostic");
 
-  // 2. chatgpt_direct enabled: 9 tools + minimal create_direct_session
+  // 2. chatgpt_direct enabled: 10 tools + minimal create_direct_session
   const enabledConfigPath = join(tempRoot, "direct-enabled.json");
   const directRepo = join(workspaceRoot, "direct-fixture");
   mkdirSync(join(directRepo, "src"), { recursive: true });
@@ -447,12 +449,13 @@ try {
     "read_workspace_file",
     "run_verification",
     "search_workspace",
+    "sync_file",
   ];
   if (JSON.stringify(enabledNames) !== JSON.stringify(expectedDirect)) {
     throw new Error(`chatgpt_direct enabled tools mismatch: ${enabledNames.join(", ")}`);
   }
-  if (enabledTools._meta.tool_count !== 9) {
-    throw new Error(`chatgpt_direct enabled tool_count should be 9, got ${enabledTools._meta.tool_count}`);
+  if (enabledTools._meta.tool_count !== 10) {
+    throw new Error(`chatgpt_direct enabled tool_count should be 10, got ${enabledTools._meta.tool_count}`);
   }
 
   // Minimal create_direct_session
@@ -472,12 +475,12 @@ try {
   if (enabledHealth.direct_profile_enabled !== true) {
     throw new Error(`direct_profile_enabled should be true, got ${enabledHealth.direct_profile_enabled}`);
   }
-  if (enabledHealth.direct_tool_count !== 9) {
-    throw new Error(`direct_tool_count should be 9, got ${enabledHealth.direct_tool_count}`);
+  if (enabledHealth.direct_tool_count !== 10) {
+    throw new Error(`direct_tool_count should be 10, got ${enabledHealth.direct_tool_count}`);
   }
 
   await enabledClient.close();
-  ok("chatgpt_direct enabled exposes 9 tools and create_direct_session works");
+  ok("chatgpt_direct enabled exposes 10 tools and create_direct_session works");
 } catch (error) {
   fail("MCP smoke test", error);
 } finally {

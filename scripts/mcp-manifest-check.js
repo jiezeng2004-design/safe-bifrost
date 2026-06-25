@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -21,12 +21,32 @@ const transportEnv = {
   ...process.env,
   PATCHWARDEN_TOOL_PROFILE: profile,
 };
-if (process.env.PATCHWARDEN_CONFIG) {
-  transportEnv.PATCHWARDEN_CONFIG = process.env.PATCHWARDEN_CONFIG;
-} else if (existsSync(defaultConfigPath)) {
-  transportEnv.PATCHWARDEN_CONFIG = defaultConfigPath;
-} else {
-  delete transportEnv.PATCHWARDEN_CONFIG;
+
+// When checking chatgpt_direct profile, ensure enableDirectProfile is true
+// by creating a temporary config if needed.
+let tempConfigPath = null;
+if (profile === "chatgpt_direct") {
+  const baseConfig = existsSync(defaultConfigPath)
+    ? JSON.parse(readFileSync(defaultConfigPath, "utf-8"))
+    : {};
+  if (!baseConfig.enableDirectProfile) {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    tempConfigPath = join(mkdtempSync(join(tmpdir(), "pw-direct-")), "config.json");
+    writeFileSync(tempConfigPath, JSON.stringify({ ...baseConfig, enableDirectProfile: true }, null, 2), "utf-8");
+    transportEnv.PATCHWARDEN_CONFIG = tempConfigPath;
+  }
+}
+
+if (!transportEnv.PATCHWARDEN_CONFIG) {
+  if (process.env.PATCHWARDEN_CONFIG) {
+    transportEnv.PATCHWARDEN_CONFIG = process.env.PATCHWARDEN_CONFIG;
+  } else if (existsSync(defaultConfigPath)) {
+    transportEnv.PATCHWARDEN_CONFIG = defaultConfigPath;
+  } else {
+    delete transportEnv.PATCHWARDEN_CONFIG;
+  }
 }
 
 const transport = new StdioClientTransport({
@@ -159,4 +179,7 @@ try {
   process.exitCode = 1;
 } finally {
   await client.close().catch(() => {});
+  if (tempConfigPath) {
+    try { rmSync(tempConfigPath, { force: true }); } catch {}
+  }
 }

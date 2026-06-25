@@ -39,8 +39,8 @@ async function test(name, fn) {
   }
 }
 
-function git(args) {
-  const result = spawnSync("git", args, { cwd: repoPath, encoding: "utf-8" });
+function git(args, cwd = repoPath) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf-8" });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
 }
 
@@ -159,6 +159,7 @@ try {
   const { auditTask } = await import("../dist/tools/auditTask.js");
   const { waitForTask } = await import("../dist/tools/waitForTask.js");
   const { runTask } = await import("../dist/runner/runTask.js");
+  const { reloadConfig } = await import("../dist/config.js");
 
   await test("list_agents reports configured executables", async () => {
     const result = listAgents();
@@ -452,6 +453,339 @@ try {
     if (summary.verify_status !== "failed" || summary.out_of_scope_changes.length === 0 || summary.acceptance_status !== "failed") {
       throw new Error(`Scope summary mismatch: ${JSON.stringify(summary)}`);
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Phase 4: Tracked external dirty tests (separate workspace)
+  // ═══════════════════════════════════════════════════════════
+
+  await test("pre-existing tracked external dirty unchanged → warning only, done", async () => {
+    // Create a separate workspace with git at the root
+    const ws2 = join(tempRoot, "workspace-tracked-dirty");
+    const repo2 = join(ws2, "repo");
+    const ext2 = join(ws2, "external");
+    mkdirSync(repo2, { recursive: true });
+    mkdirSync(ext2, { recursive: true });
+    mkdirSync(join(ws2, ".patchwarden"), { recursive: true });
+    writeFileSync(join(ws2, ".patchwarden", "watcher-heartbeat.json"), JSON.stringify({
+      status: "running", pid: process.pid, instance_id: "td-watcher", launcher_pid: process.pid,
+      started_at: new Date().toISOString(), last_heartbeat_at: new Date().toISOString(),
+    }), "utf-8");
+
+    writeFileSync(join(repo2, "main.js"), "console.log('main');\n", "utf-8");
+    writeFileSync(join(ext2, "external-tracked.txt"), "external tracked content\n", "utf-8");
+
+    git(["init"], ws2);
+    git(["add", "repo/main.js", "external/external-tracked.txt"], ws2);
+    git(["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-m", "init"], ws2);
+
+    // Now modify external file to create pre-existing dirty state
+    writeFileSync(join(ext2, "external-tracked.txt"), "pre-existing dirty content\n", "utf-8");
+
+    const cfg2 = join(tempRoot, "config-tracked-dirty.json");
+    writeFileSync(cfg2, JSON.stringify({
+      workspaceRoot: ws2,
+      plansDir: ".patchwarden/plans",
+      tasksDir: ".patchwarden/tasks",
+      agents: {
+        noop: { command: process.execPath, args: ["-e", "console.log('noop')"] },
+      },
+      allowedTestCommands: ["node --check main.js"],
+      maxReadFileBytes: 200000,
+      defaultTaskTimeoutSeconds: 10,
+      watcherStaleSeconds: 3600,
+    }, null, 2), "utf-8");
+
+    const oldConfig = process.env.PATCHWARDEN_CONFIG;
+    process.env.PATCHWARDEN_CONFIG = cfg2;
+    reloadConfig(cfg2);
+
+    const plan = savePlan({ title: "Noop with external dirty", content: "Do nothing." });
+    const task = createTask({ plan_id: plan.plan_id, agent: "noop", repo_path: "repo", verify_commands: ["node --check main.js"] });
+    const result = await runTask(task.task_id);
+
+    if (result.status !== "done") {
+      throw new Error(`Expected done, got: ${JSON.stringify(result)}`);
+    }
+    const structured = JSON.parse(readFileSync(join(task.path, "result.json"), "utf-8"));
+
+    // Must have pre-existing external dirty warning
+    if (!structured.warnings?.some((w) => w.includes("Pre-existing external dirty"))) {
+      throw new Error(`Missing pre-existing dirty warning: ${JSON.stringify(structured.warnings)}`);
+    }
+
+    // new_out_of_scope_changes must be empty (file didn't change during task)
+    if (structured.new_out_of_scope_changes?.length > 0) {
+      throw new Error(`Should have no new out-of-scope changes: ${JSON.stringify(structured.new_out_of_scope_changes)}`);
+    }
+
+    // verify_status should NOT be failed
+    if (structured.verify_status === "failed") {
+      throw new Error(`verify_status should not be failed: ${structured.verify_status}`);
+    }
+
+    // get_task_summary acceptance_status should NOT be failed
+    const summary = getTaskSummary(task.task_id);
+    if (summary.acceptance_status === "failed") {
+      throw new Error(`acceptance_status should not be failed: ${summary.acceptance_status}`);
+    }
+
+    // audit_task should NOT fail scope_changes
+    const audit = auditTask(task.task_id);
+    const scopeCheck = audit.checks.find((c) => c.name === "scope_changes");
+    if (!scopeCheck || scopeCheck.result !== "pass") {
+      throw new Error(`audit scope_changes should pass: ${JSON.stringify(scopeCheck)}`);
+    }
+
+    // Restore config AFTER all assertions
+    process.env.PATCHWARDEN_CONFIG = oldConfig;
+    reloadConfig(oldConfig);
+
+    // Print result.json key fields for reporting
+    console.log(`    [result.json] status=${structured.status}, verify_status=${structured.verify_status}, new_out_of_scope=${JSON.stringify(structured.new_out_of_scope_changes)}, preexisting=${JSON.stringify(structured.preexisting_external_dirty_files)}, warnings=${JSON.stringify(structured.warnings)}`);
+  });
+
+  await test("pre-existing tracked external dirty changed during task → failed_scope_violation", async () => {
+    const ws2 = join(tempRoot, "workspace-tracked-dirty2");
+    const repo2 = join(ws2, "repo");
+    const ext2 = join(ws2, "external");
+    mkdirSync(repo2, { recursive: true });
+    mkdirSync(ext2, { recursive: true });
+    mkdirSync(join(ws2, ".patchwarden"), { recursive: true });
+    writeFileSync(join(ws2, ".patchwarden", "watcher-heartbeat.json"), JSON.stringify({
+      status: "running", pid: process.pid, instance_id: "td-watcher2", launcher_pid: process.pid,
+      started_at: new Date().toISOString(), last_heartbeat_at: new Date().toISOString(),
+    }), "utf-8");
+
+    writeFileSync(join(repo2, "main.js"), "console.log('main');\n", "utf-8");
+    writeFileSync(join(ext2, "external-tracked.txt"), "external tracked content\n", "utf-8");
+
+    git(["init"], ws2);
+    git(["add", "repo/main.js", "external/external-tracked.txt"], ws2);
+    git(["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-m", "init"], ws2);
+
+    // Modify external file BEFORE task (pre-existing dirty)
+    writeFileSync(join(ext2, "external-tracked.txt"), "pre-existing dirty content\n", "utf-8");
+
+    const cfg2 = join(tempRoot, "config-tracked-dirty2.json");
+    writeFileSync(cfg2, JSON.stringify({
+      workspaceRoot: ws2,
+      plansDir: ".patchwarden/plans",
+      tasksDir: ".patchwarden/tasks",
+      agents: {
+        extmod: { command: process.execPath, args: ["-e", "require('fs').appendFileSync('../external/external-tracked.txt',' modified by task\\n')"] },
+      },
+      allowedTestCommands: ["node --check main.js"],
+      maxReadFileBytes: 200000,
+      defaultTaskTimeoutSeconds: 10,
+      watcherStaleSeconds: 3600,
+    }, null, 2), "utf-8");
+
+    const oldConfig = process.env.PATCHWARDEN_CONFIG;
+    process.env.PATCHWARDEN_CONFIG = cfg2;
+    reloadConfig(cfg2);
+
+    const plan = savePlan({ title: "External dirty modifier", content: "Modify external tracked file." });
+    const task = createTask({ plan_id: plan.plan_id, agent: "extmod", repo_path: "repo", verify_commands: ["node --check main.js"] });
+    const result = await runTask(task.task_id);
+
+    if (result.status !== "failed_scope_violation") {
+      throw new Error(`Expected failed_scope_violation, got: ${JSON.stringify(result)}`);
+    }
+    const structured = JSON.parse(readFileSync(join(task.path, "result.json"), "utf-8"));
+
+    // new_out_of_scope_changes must contain the external tracked file
+    if (!structured.new_out_of_scope_changes?.some((f) => f.path.includes("external-tracked.txt"))) {
+      throw new Error(`Missing new out-of-scope change: ${JSON.stringify(structured.new_out_of_scope_changes)}`);
+    }
+
+    // verify_status must be failed
+    if (structured.verify_status !== "failed") {
+      throw new Error(`verify_status must be failed: ${structured.verify_status}`);
+    }
+
+    // rollback plan must contain the file
+    const rollbackPath = join(task.path, "rollback_scope_violation_plan.md");
+    if (!existsSync(rollbackPath)) throw new Error("rollback_scope_violation_plan.md missing");
+    const rollback = readFileSync(rollbackPath, "utf-8");
+    if (!rollback.includes("external-tracked.txt")) {
+      throw new Error(`Rollback plan missing external-tracked.txt: ${rollback}`);
+    }
+
+    // get_task_summary acceptance_status must be failed
+    const summary = getTaskSummary(task.task_id);
+    if (summary.acceptance_status !== "failed") {
+      throw new Error(`acceptance_status must be failed: ${summary.acceptance_status}`);
+    }
+
+    // audit_task verdict must be fail
+    const audit = auditTask(task.task_id);
+    if (audit.verdict !== "fail") {
+      throw new Error(`audit verdict must be fail: ${audit.verdict}`);
+    }
+
+    // Restore config AFTER all assertions
+    process.env.PATCHWARDEN_CONFIG = oldConfig;
+    reloadConfig(oldConfig);
+
+    console.log(`    [result.json] status=${structured.status}, verify_status=${structured.verify_status}, new_out_of_scope=${JSON.stringify(structured.new_out_of_scope_changes)}, preexisting=${JSON.stringify(structured.preexisting_external_dirty_files)}, warnings=${JSON.stringify(structured.warnings)}`);
+  });
+
+  await test("clean tracked external file changed during task → failed_scope_violation", async () => {
+    const ws2 = join(tempRoot, "workspace-tracked-dirty3");
+    const repo2 = join(ws2, "repo");
+    const ext2 = join(ws2, "external");
+    mkdirSync(repo2, { recursive: true });
+    mkdirSync(ext2, { recursive: true });
+    mkdirSync(join(ws2, ".patchwarden"), { recursive: true });
+    writeFileSync(join(ws2, ".patchwarden", "watcher-heartbeat.json"), JSON.stringify({
+      status: "running", pid: process.pid, instance_id: "td-watcher3", launcher_pid: process.pid,
+      started_at: new Date().toISOString(), last_heartbeat_at: new Date().toISOString(),
+    }), "utf-8");
+
+    writeFileSync(join(repo2, "main.js"), "console.log('main');\n", "utf-8");
+    writeFileSync(join(ext2, "external-tracked.txt"), "external tracked content\n", "utf-8");
+
+    git(["init"], ws2);
+    git(["add", "repo/main.js", "external/external-tracked.txt"], ws2);
+    git(["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-m", "init"], ws2);
+
+    // External file is clean (committed state) — no pre-existing dirty
+
+    const cfg2 = join(tempRoot, "config-tracked-dirty3.json");
+    writeFileSync(cfg2, JSON.stringify({
+      workspaceRoot: ws2,
+      plansDir: ".patchwarden/plans",
+      tasksDir: ".patchwarden/tasks",
+      agents: {
+        extmod: { command: process.execPath, args: ["-e", "require('fs').appendFileSync('../external/external-tracked.txt',' modified by task\\n')"] },
+      },
+      allowedTestCommands: ["node --check main.js"],
+      maxReadFileBytes: 200000,
+      defaultTaskTimeoutSeconds: 10,
+      watcherStaleSeconds: 3600,
+    }, null, 2), "utf-8");
+
+    const oldConfig = process.env.PATCHWARDEN_CONFIG;
+    process.env.PATCHWARDEN_CONFIG = cfg2;
+    reloadConfig(cfg2);
+
+    const plan = savePlan({ title: "Clean external modifier", content: "Modify clean external tracked file." });
+    const task = createTask({ plan_id: plan.plan_id, agent: "extmod", repo_path: "repo", verify_commands: ["node --check main.js"] });
+    const result = await runTask(task.task_id);
+
+    if (result.status !== "failed_scope_violation") {
+      throw new Error(`Expected failed_scope_violation, got: ${JSON.stringify(result)}`);
+    }
+    const structured = JSON.parse(readFileSync(join(task.path, "result.json"), "utf-8"));
+
+    // new_out_of_scope_changes must contain the external tracked file (clean→dirty)
+    if (!structured.new_out_of_scope_changes?.some((f) => f.path.includes("external-tracked.txt"))) {
+      throw new Error(`Missing new out-of-scope change: ${JSON.stringify(structured.new_out_of_scope_changes)}`);
+    }
+
+    // verify_status must be failed
+    if (structured.verify_status !== "failed") {
+      throw new Error(`verify_status must be failed: ${structured.verify_status}`);
+    }
+
+    // get_task_summary acceptance_status must be failed
+    const summary = getTaskSummary(task.task_id);
+    if (summary.acceptance_status !== "failed") {
+      throw new Error(`acceptance_status must be failed: ${summary.acceptance_status}`);
+    }
+
+    // audit_task verdict must be fail
+    const audit = auditTask(task.task_id);
+    if (audit.verdict !== "fail") {
+      throw new Error(`audit verdict must be fail: ${audit.verdict}`);
+    }
+
+    // Restore config AFTER all assertions
+    process.env.PATCHWARDEN_CONFIG = oldConfig;
+    reloadConfig(oldConfig);
+
+    console.log(`    [result.json] status=${structured.status}, verify_status=${structured.verify_status}, new_out_of_scope=${JSON.stringify(structured.new_out_of_scope_changes)}, preexisting=${JSON.stringify(structured.preexisting_external_dirty_files)}, warnings=${JSON.stringify(structured.warnings)}`);
+  });
+
+  await test("tracked external file rename → failed_scope_violation", async () => {
+    const ws2 = join(tempRoot, "workspace-tracked-rename");
+    const repo2 = join(ws2, "repo");
+    const ext2 = join(ws2, "external");
+    mkdirSync(repo2, { recursive: true });
+    mkdirSync(ext2, { recursive: true });
+    mkdirSync(join(ws2, ".patchwarden"), { recursive: true });
+    writeFileSync(join(ws2, ".patchwarden", "watcher-heartbeat.json"), JSON.stringify({
+      status: "running", pid: process.pid, instance_id: "td-watcher-rename", launcher_pid: process.pid,
+      started_at: new Date().toISOString(), last_heartbeat_at: new Date().toISOString(),
+    }), "utf-8");
+
+    writeFileSync(join(repo2, "main.js"), "console.log('main');\n", "utf-8");
+    writeFileSync(join(ext2, "external-tracked.txt"), "external tracked content\n", "utf-8");
+
+    git(["init"], ws2);
+    git(["add", "repo/main.js", "external/external-tracked.txt"], ws2);
+    git(["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-m", "init"], ws2);
+
+    // External file is clean (committed state) — no pre-existing dirty
+
+    const cfg2 = join(tempRoot, "config-tracked-rename.json");
+    writeFileSync(cfg2, JSON.stringify({
+      workspaceRoot: ws2,
+      plansDir: ".patchwarden/plans",
+      tasksDir: ".patchwarden/tasks",
+      agents: {
+        extrenamer: { command: process.execPath, args: ["-e", "require('fs').renameSync('../external/external-tracked.txt','../external/external-renamed.txt')"] },
+      },
+      allowedTestCommands: ["node --check main.js"],
+      maxReadFileBytes: 200000,
+      defaultTaskTimeoutSeconds: 10,
+      watcherStaleSeconds: 3600,
+    }, null, 2), "utf-8");
+
+    const oldConfig = process.env.PATCHWARDEN_CONFIG;
+    process.env.PATCHWARDEN_CONFIG = cfg2;
+    reloadConfig(cfg2);
+
+    const plan = savePlan({ title: "External rename", content: "Rename external tracked file." });
+    const task = createTask({ plan_id: plan.plan_id, agent: "extrenamer", repo_path: "repo", verify_commands: ["node --check main.js"] });
+    const result = await runTask(task.task_id);
+
+    if (result.status !== "failed_scope_violation") {
+      throw new Error(`Expected failed_scope_violation, got: ${JSON.stringify(result)}`);
+    }
+    const structured = JSON.parse(readFileSync(join(task.path, "result.json"), "utf-8"));
+
+    // new_out_of_scope_changes must contain rename evidence (old or new path)
+    const hasRenameEvidence = structured.new_out_of_scope_changes?.some(
+      (f) => f.path.includes("external-renamed.txt") || f.path.includes("external-tracked.txt") || f.change === "renamed"
+    );
+    if (!hasRenameEvidence) {
+      throw new Error(`Missing rename evidence in new_out_of_scope_changes: ${JSON.stringify(structured.new_out_of_scope_changes)}`);
+    }
+
+    // verify_status must be failed
+    if (structured.verify_status !== "failed") {
+      throw new Error(`verify_status must be failed: ${structured.verify_status}`);
+    }
+
+    // get_task_summary acceptance_status must be failed
+    const summary = getTaskSummary(task.task_id);
+    if (summary.acceptance_status !== "failed") {
+      throw new Error(`acceptance_status must be failed: ${summary.acceptance_status}`);
+    }
+
+    // audit_task verdict must be fail
+    const audit = auditTask(task.task_id);
+    if (audit.verdict !== "fail") {
+      throw new Error(`audit verdict must be fail: ${audit.verdict}`);
+    }
+
+    // Restore config AFTER all assertions
+    process.env.PATCHWARDEN_CONFIG = oldConfig;
+    reloadConfig(oldConfig);
+
+    console.log(`    [result.json] status=${structured.status}, verify_status=${structured.verify_status}, new_out_of_scope=${JSON.stringify(structured.new_out_of_scope_changes)}, preexisting=${JSON.stringify(structured.preexisting_external_dirty_files)}, warnings=${JSON.stringify(structured.warnings)}`);
   });
 
   await test("timeout terminates a long-running agent", async () => {

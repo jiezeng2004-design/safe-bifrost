@@ -1,6 +1,6 @@
 {
   "name": "patchwarden",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A secure local MCP bridge: clients save plans, local agents execute tasks, and results are returned through workspace-scoped files.",
   "type": "module",
   "main": "dist/index.js",
@@ -34,7 +34,8 @@
     "watch": "node dist/runner/watch.js",
     "doctor": "node dist/doctor.js",
     "doctor:ci": "node dist/doctor.js --allow-default-config",
-    "test": "node dist/smoke-test.js && node scripts/lifecycle-smoke.js && node scripts/doctor-smoke.js && node scripts/tunnel-supervisor-smoke.js && node scripts/watcher-supervisor-smoke.js && node scripts/control-smoke.js && node scripts/mcp-manifest-check.js && node scripts/brand-check.js",
+    "test:unit": "node scripts/unit-tests.js",
+    "test": "node dist/smoke-test.js && node scripts/unit-tests.js && node scripts/lifecycle-smoke.js && node scripts/doctor-smoke.js && node scripts/tunnel-supervisor-smoke.js && node scripts/watcher-supervisor-smoke.js && node scripts/control-smoke.js && node scripts/mcp-manifest-check.js && node scripts/brand-check.js",
     "test:lifecycle": "npm run build && node scripts/lifecycle-smoke.js",
     "test:doctor": "npm run build && node scripts/doctor-smoke.js",
     "test:tunnel-supervisor": "npm run build && node scripts/tunnel-supervisor-smoke.js",

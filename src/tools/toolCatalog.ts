@@ -35,6 +35,7 @@ export const CHATGPT_CORE_TOOL_NAMES = [
   "list_tasks",
   "cancel_task",
   "audit_task",
+  "safe_status",
 ] as const;
 
 export const CHATGPT_DIRECT_TOOL_NAMES = [
@@ -47,6 +48,7 @@ export const CHATGPT_DIRECT_TOOL_NAMES = [
   "run_verification",
   "finalize_direct_session",
   "audit_session",
+  "sync_file",
 ] as const;
 
 let lastSnapshot: ToolCatalogSnapshot | null = null;

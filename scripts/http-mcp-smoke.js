@@ -139,7 +139,7 @@ try {
     serverStderr += chunk.toString();
   });
 
-  await sleep(1000);
+  await sleep(3000);
   if (serverProcess.exitCode !== null) {
     throw new Error(`HTTP server exited early: ${serverStderr}`);
   }
@@ -274,7 +274,15 @@ try {
     stdio: ["ignore", "ignore", "pipe"],
   });
   serverProcess.stderr.on("data", (chunk) => { serverStderr += chunk.toString(); });
-  await sleep(1000);
+  await sleep(3000);
+  // Wait for server to be ready
+  for (let i = 0; i < 10; i++) {
+    try {
+      const r = await fetch(`${mcpUrl}/healthz`);
+      if (r.status === 200) break;
+    } catch {}
+    await sleep(500);
+  }
 
   await test("token: no token returns 401", async () => {
     try {

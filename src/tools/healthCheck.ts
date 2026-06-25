@@ -122,6 +122,7 @@ export function healthCheck(catalog?: ToolCatalogSnapshot, input: HealthCheckInp
       uptime_seconds: Math.round((Date.now() - SERVER_STARTED_AT) / 1000),
       checked_at: new Date().toISOString(),
     },
+    path_encoding: checkPathEncoding(),
     watcher,
     workspace_root: workspace,
     tasks_dir: tasks,
@@ -248,4 +249,25 @@ function readTunnelStatus(): Record<string, unknown> & { last_error: string | nu
 
 function safeText(value: unknown, maxLength: number): string {
   return typeof value === "string" ? value.replace(/[\r\n]+/g, " ").slice(0, maxLength) : "";
+}
+
+function checkPathEncoding(): { encoding: string; warnings: string[] } {
+  const warnings: string[] = [];
+  // Node.js always uses UTF-8 for fs operations, but on Windows the console
+  // codepage can cause display issues. We check if the environment is likely
+  // to cause problems with non-ASCII paths.
+  if (process.platform === "win32") {
+    // Check if the system locale uses a codepage that might not support UTF-8
+    const lang = process.env.LANG || process.env.LC_ALL || "";
+    const chcp = process.env.PATCHWARDEN_CHCP || "";
+    if (chcp && !chcp.includes("65001") && !chcp.includes("utf")) {
+      warnings.push(`Windows codepage "${chcp}" may cause display issues with non-ASCII paths. Consider setting codepage to 65001 (UTF-8).`);
+    }
+  }
+  // Verify that Node.js fs operations use UTF-8 by default
+  // This is always true in Node.js >= 18
+  return {
+    encoding: "utf-8",
+    warnings,
+  };
 }

@@ -101,6 +101,9 @@ export interface CompactTaskSummaryOutput {
     max_items: number;
     truncated: boolean;
   };
+  release_artifacts_count: number;
+  release_artifact_paths: string[];
+  artifact_status: string | null;
   verification_summary: TaskSummaryOutput["verification_summary"];
   summary: string;
   warnings: string[];
@@ -136,7 +139,14 @@ export function getTaskSummary(taskId: string, options: GetTaskSummaryOptions = 
   const result = resultRead.data;
   const verify = verifyRead.data;
   const terminal = TERMINAL_STATUSES.has(String(status.status));
-  const outOfScope = asArray(result.out_of_scope_changes ?? status.out_of_scope_changes);
+  // Phase 4: Use new_out_of_scope_changes (task-caused) for acceptance status.
+  // Pre-existing external dirty files that didn't change should NOT fail acceptance.
+  const outOfScope = asArray(
+    result.new_out_of_scope_changes
+    ?? status.new_out_of_scope_changes
+    ?? result.out_of_scope_changes
+    ?? status.out_of_scope_changes
+  );
   const verifyStatus = String(verify.status ?? result.verify_status ?? result.verify?.status ?? status.verify_status ?? "not_available");
   const errors = [status.error, ...asArray(result.errors), ...asArray(result.known_issues)]
     .filter((value): value is string => typeof value === "string" && value.trim() !== "");
@@ -300,6 +310,14 @@ function buildCompactSummary(output: Record<string, any>, maxItems: number): Com
   ] as const;
   const groups = Object.fromEntries(groupNames.map((name) => [name, asArray(hygiene[name]).slice(0, maxItems)]));
   const truncated = groupNames.some((name) => asArray(hygiene[name]).length > maxItems);
+
+  // Phase 6: Read artifact_manifest.json for release artifact info
+  const taskDir = resolve(getTasksDir(getConfig()), String(output.task_id));
+  const manifestRead = tryReadJson(join(taskDir, "artifact_manifest.json"));
+  const manifest = asRecord(manifestRead.data);
+  const releaseArtifacts = asArray(manifest.artifacts);
+  const releaseArtifactPaths = releaseArtifacts.map((a: any) => String(a.path || "")).slice(0, maxItems);
+
   const compact = {
     view: "compact" as const,
     task_id: String(output.task_id),
@@ -316,6 +334,9 @@ function buildCompactSummary(output: Record<string, any>, maxItems: number): Com
       max_items: maxItems,
       truncated,
     },
+    release_artifacts_count: releaseArtifacts.length,
+    release_artifact_paths: releaseArtifactPaths,
+    artifact_status: String(output.artifact_status || manifest.status || "collected"),
     verification_summary: output.verification_summary,
     summary: String(output.summary).slice(0, 1000),
     warnings: asArray(output.warnings).slice(0, maxItems),

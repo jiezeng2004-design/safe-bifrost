@@ -11,6 +11,7 @@ release/
 patchwarden-release.zip
 patchwarden-release.tar.gz
 patchwarden-*.tgz
+/PatchWarden-v*.zip
 safe-bifrost-release.zip
 safe-bifrost-release.tar.gz
 safe-bifrost-*.tgz

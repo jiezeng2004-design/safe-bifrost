@@ -8,10 +8,10 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-当前稳定版本：**v0.6.0**。查看
-[发布说明](docs/release-v0.6.0.md)、
+当前稳定版本：**v0.6.1**。查看
+[发布说明](docs/release-v0.6.1.md)、
 [迁移指南](docs/migration-from-safe-bifrost.md)和
-[GitHub Release](https://github.com/jiezeng2004-design/PatchWarden/releases/tag/v0.6.0)。
+[GitHub Release](https://github.com/jiezeng2004-design/PatchWarden/releases/tag/v0.6.1)。
 
 PatchWarden 是一个面向本地编程 Agent 的安全 MCP 桥接器。上游的
 ChatGPT、Codex、OpenCode 或其他 MCP 客户端负责规划与验收，

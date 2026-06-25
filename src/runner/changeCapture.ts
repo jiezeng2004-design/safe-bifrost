@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, isAbsolute } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isSensitivePath } from "../security/sensitiveGuard.js";
 
@@ -30,6 +30,7 @@ export interface RepoSnapshot {
   status: string;
   workspace_dirty: boolean;
   files: Record<string, FileFingerprint>;
+  dirty_paths: string[]; // paths that git status --porcelain reports as modified/added/deleted/untracked/renamed
   warnings: string[];
 }
 
@@ -98,10 +99,32 @@ export function captureRepoSnapshot(repoPath: string): RepoSnapshot {
   const trackedPaths = new Set<string>();
   const ignoredPaths = new Set<string>();
 
+  const dirtyPaths = new Set<string>();
   if (isGit) {
     const headResult = runGit(repoPath, ["rev-parse", "HEAD"]);
     if (headResult.status === 0) head = headResult.stdout.trim() || null;
     status = runGit(repoPath, ["status", "--porcelain=v1", "-uall"]).stdout.trimEnd();
+    // Parse git status --porcelain to collect all dirty paths
+    for (const line of status.split("\n")) {
+      if (line.length < 4) continue;
+      const st = line.slice(0, 2); // XY status codes
+      const rawPath = line.slice(3);
+      // M=modified, A=added, D=deleted, ?=untracked, R=renamed, !=ignored
+      if (/[MAD\?R]/.test(st)) {
+        if (st.includes("R")) {
+          // Rename: rawPath is "oldname -> newname"
+          const parts = rawPath.split(" -> ");
+          if (parts.length === 2) {
+            dirtyPaths.add(normalizePath(parts[0]));
+            dirtyPaths.add(normalizePath(parts[1]));
+          } else {
+            dirtyPaths.add(normalizePath(rawPath));
+          }
+        } else {
+          dirtyPaths.add(normalizePath(rawPath));
+        }
+      }
+    }
     const tracked = runGit(repoPath, ["ls-files", "-z"]);
     if (tracked.status === 0) {
       for (const path of tracked.stdout.split("\0").filter(Boolean)) trackedPaths.add(normalizePath(path));
@@ -161,6 +184,7 @@ export function captureRepoSnapshot(repoPath: string): RepoSnapshot {
     status,
     workspace_dirty: status.trim().length > 0,
     files,
+    dirty_paths: [...dirtyPaths],
     warnings,
   };
 }
@@ -334,6 +358,193 @@ export function emptyArtifactHygiene(): ArtifactHygiene {
     runtime_generated_files: [],
     suspicious_changes: [],
   };
+}
+
+// ── Phase 4: External dirty file baseline ─────────────────────────
+
+export interface ExternalDirtyFile {
+  path: string;
+  change: ChangedFile["change"];
+  before_sha256: string | null;
+  after_sha256: string | null;
+}
+
+/**
+ * Extract files that are dirty in the workspace but outside the target repo.
+ * Used to establish a baseline before task execution.
+ */
+export function extractExternalDirtyFiles(
+  workspaceSnapshot: RepoSnapshot,
+  repoPath: string,
+  workspaceRoot: string
+): ExternalDirtyFile[] {
+  const dirtyFiles: ExternalDirtyFile[] = [];
+  const dirtyPathSet = new Set(workspaceSnapshot.dirty_paths);
+  for (const [path, fingerprint] of Object.entries(workspaceSnapshot.files)) {
+    const absolutePath = resolve(workspaceRoot, path);
+    const rel = relative(repoPath, absolutePath);
+    // If the path is outside repoPath (starts with .. or is absolute)
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      // A file is "external dirty" if:
+      // 1. Git reports it as dirty (modified/added/deleted/untracked) via dirty_paths, OR
+      // 2. It's not tracked by git (untracked file), OR
+      // 3. It's explicitly ignored
+      const isDirty = dirtyPathSet.has(path);
+      const isUntracked = !fingerprint.tracked;
+      const isIgnored = fingerprint.ignored;
+      if (isDirty || isUntracked || isIgnored) {
+        dirtyFiles.push({
+          path,
+          change: isDirty ? "modified" : "added",
+          before_sha256: fingerprint.sha256,
+          after_sha256: null,
+        });
+      }
+    }
+  }
+  return dirtyFiles;
+}
+
+/**
+ * Compare external dirty files between baseline and post-task snapshots.
+ * Returns files that are NEW (not present in baseline) or CHANGED
+ * (same path but different sha256, meaning the task modified them).
+ */
+export function findNewExternalDirtyFiles(
+  baseline: ExternalDirtyFile[],
+  current: ExternalDirtyFile[]
+): ExternalDirtyFile[] {
+  const baselineMap = new Map(baseline.map((f) => [f.path, f]));
+  return current.filter((f) => {
+    const baselineFile = baselineMap.get(f.path);
+    if (!baselineFile) return true; // New path — definitely new
+    // Same path but content changed during task execution
+    if (baselineFile.before_sha256 !== f.before_sha256) return true;
+    return false;
+  });
+}
+
+// ── Phase 6: Artifact manifest ────────────────────────────────────
+
+export interface ArtifactManifestEntry {
+  path: string;
+  type: string;
+  size: number;
+  sha256: string;
+  generated_by: string;
+  created_at: string;
+}
+
+export interface ArtifactManifest {
+  task_id: string | null;
+  generated_at: string;
+  artifacts: ArtifactManifestEntry[];
+}
+
+export function buildArtifactManifest(
+  changedFiles: ChangedFile[],
+  repoPath: string,
+  taskId?: string
+): ArtifactManifest {
+  const entries: ArtifactManifestEntry[] = [];
+  for (const file of changedFiles) {
+    if (file.kind !== "build_artifact") continue;
+    const absolutePath = resolve(repoPath, file.path);
+    let size = 0;
+    let sha256 = file.after_sha256 || "unknown";
+    try {
+      const stat = lstatSync(absolutePath);
+      if (stat.isFile()) {
+        size = stat.size;
+        if (size <= MAX_HASH_BYTES) {
+          sha256 = createHash("sha256").update(readFileSync(absolutePath)).digest("hex");
+        }
+      }
+    } catch {
+      // File may have been deleted
+    }
+    entries.push({
+      path: file.path,
+      type: classifyArtifactType(file.path),
+      size,
+      sha256,
+      generated_by: "task_execution",
+      created_at: new Date().toISOString(),
+    });
+  }
+  return {
+    task_id: taskId || null,
+    generated_at: new Date().toISOString(),
+    artifacts: entries,
+  };
+}
+
+function classifyArtifactType(path: string): string {
+  const normalized = normalizePath(path).toLowerCase();
+  const basename = normalized.split("/").pop() || "";
+  if (basename.endsWith(".exe")) return "windows_exe";
+  if (basename.endsWith(".apk")) return "android_apk";
+  if (basename.endsWith(".zip")) return "zip";
+  if (basename.endsWith(".asar")) return "asar";
+  if (basename.endsWith(".dll")) return "dll";
+  if (basename.endsWith(".pak")) return "pak";
+  return "release_directory_file";
+}
+
+// ── Phase 6: Changed file grouping ────────────────────────────────
+
+export interface ChangedFileGroups {
+  source_changes: ChangedFile[];
+  docs_changes: ChangedFile[];
+  config_changes: ChangedFile[];
+  test_changes: ChangedFile[];
+  release_artifacts: ChangedFile[];
+  runtime_generated_files: ChangedFile[];
+}
+
+export function groupChangedFiles(changedFiles: ChangedFile[]): ChangedFileGroups {
+  const groups: ChangedFileGroups = {
+    source_changes: [],
+    docs_changes: [],
+    config_changes: [],
+    test_changes: [],
+    release_artifacts: [],
+    runtime_generated_files: [],
+  };
+  for (const file of changedFiles) {
+    const normalized = normalizePath(file.path).toLowerCase();
+    const parts = normalized.split("/");
+    const basename = parts[parts.length - 1] || "";
+    // Check for docs
+    if (parts.some((p) => p === "docs") || /\.(md|rst|txt)$/.test(basename)) {
+      groups.docs_changes.push(file);
+      continue;
+    }
+    // Check for config
+    if (basename === "package.json" || basename === "tsconfig.json" || basename === ".gitignore" ||
+        basename.startsWith(".config") || basename.endsWith(".config.js") || basename.endsWith(".config.ts")) {
+      groups.config_changes.push(file);
+      continue;
+    }
+    // Check for test files
+    if (basename.includes(".test.") || basename.includes(".spec.") || parts.some((p) => p === "test" || p === "tests" || p === "__tests__")) {
+      groups.test_changes.push(file);
+      continue;
+    }
+    // Check for build artifacts / release
+    if (file.kind === "build_artifact") {
+      groups.release_artifacts.push(file);
+      continue;
+    }
+    // Check for runtime generated
+    if (file.kind === "runtime_generated") {
+      groups.runtime_generated_files.push(file);
+      continue;
+    }
+    // Default: source changes
+    groups.source_changes.push(file);
+  }
+  return groups;
 }
 
 function classifyChangedFile(

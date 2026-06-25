@@ -245,7 +245,7 @@ try {
   const coreTools = selectToolsForProfile(fullTools, "chatgpt_core", config?.enableDirectProfile);
   const createSchema = coreTools.find((tool) => tool.name === "create_task")?.inputSchema as any;
   const waitSchema = coreTools.find((tool) => tool.name === "wait_for_task")?.inputSchema as any;
-  check("Full tool profile exposes 28 tools", fullTools.length === 28, `${fullTools.length} tools`);
+  check("Full tool profile exposes 30 tools", fullTools.length === 30, `${fullTools.length} tools`);
   check(
     `chatgpt_core profile exposes the exact ${CHATGPT_CORE_TOOL_NAMES.length}-tool manifest`,
     JSON.stringify(coreTools.map((tool) => tool.name)) === JSON.stringify(CHATGPT_CORE_TOOL_NAMES),

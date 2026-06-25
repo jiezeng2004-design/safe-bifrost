@@ -28,6 +28,8 @@ import { getTaskSummary } from "../tools/getTaskSummary.js";
 import { waitForTask } from "../tools/waitForTask.js";
 import { errorPayload, PatchWardenError } from "../errors.js";
 import { auditTask } from "../tools/auditTask.js";
+import { safeStatus } from "../tools/safeStatus.js";
+import { logger } from "../logging.js";
 import { runTask } from "../runner/runTask.js";
 import { createDirectSession } from "../tools/createDirectSession.js";
 import { searchWorkspace } from "../tools/searchWorkspace.js";
@@ -35,6 +37,7 @@ import { applyPatch } from "../tools/applyPatch.js";
 import { runVerification } from "../tools/runVerification.js";
 import { finalizeDirectSession } from "../tools/finalizeDirectSession.js";
 import { auditSession } from "../tools/auditSession.js";
+import { syncFile } from "../tools/syncFile.js";
 import { TASK_TEMPLATE_NAMES } from "./taskTemplates.js";
 import {
   buildToolCatalogSnapshot,
@@ -415,6 +418,18 @@ export function getToolDefs(): ToolDef[] {
         required: ["task_id"],
       },
     },
+    {
+      name: "safe_status",
+      description:
+        "Return minimal task lifecycle status without exposing diff, log content, file contents, or sensitive paths. Use this when only task state is needed and content-bearing tools may be blocked by upper-layer security.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to check" },
+        },
+        required: ["task_id"],
+      },
+    },
   ];
 
   // Direct session tools
@@ -534,6 +549,23 @@ export function getToolDefs(): ToolDef[] {
     },
   });
 
+  tools.push({
+    name: "sync_file",
+    description:
+      "Copy a file from source to target within the same Direct session repo. Both paths must be inside the session repo_path. Returns before/after sha256 hashes and whether the target changed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "Direct session ID" },
+        source_path: { type: "string", description: "Relative path to source file within repo" },
+        target_path: { type: "string", description: "Relative path to target file within repo" },
+        expected_source_sha256: { type: "string", description: "Optional: expected sha256 of source file" },
+        expected_target_sha256: { type: "string", description: "Optional: expected sha256 of target file before copy" },
+      },
+      required: ["session_id", "source_path", "target_path"],
+    },
+  });
+
   // run_task: only available when explicitly enabled
   if ((config as any).enableRunTaskTool === true) {
     tools.push({
@@ -578,6 +610,20 @@ function guardDirectProfileEnabled(): void {
 }
 
 export async function handleToolCall(name: string, args: Record<string, unknown> | undefined) {
+  const startTime = Date.now();
+  const taskId = args?.task_id ? String(args.task_id) : args?.session_id ? String(args.session_id) : undefined;
+  try {
+    const result = await handleToolCallInternal(name, args);
+    logger.audit(name, true, Date.now() - startTime, undefined, taskId);
+    return result;
+  } catch (err) {
+    const errorReason = err instanceof Error ? err.message : String(err);
+    logger.audit(name, false, Date.now() - startTime, errorReason, taskId);
+    throw err;
+  }
+}
+
+async function handleToolCallInternal(name: string, args: Record<string, unknown> | undefined) {
   switch (name) {
     case "save_plan": {
       return toResult(
@@ -725,6 +771,10 @@ export async function handleToolCall(name: string, args: Record<string, unknown>
       return toResult(auditTask(String(args?.task_id ?? "")));
     }
 
+    case "safe_status": {
+      return toResult(safeStatus(String(args?.task_id ?? "")));
+    }
+
     case "run_task": {
       const config = getConfig();
       if ((config as any).enableRunTaskTool !== true) {
@@ -788,6 +838,19 @@ export async function handleToolCall(name: string, args: Record<string, unknown>
       return toResult(auditSession({
         session_id: String(args?.session_id ?? ""),
       }));
+    }
+
+    case "sync_file": {
+      guardDirectProfileEnabled();
+      return toResult(syncFile(
+        String(args?.session_id ?? ""),
+        String(args?.source_path ?? ""),
+        String(args?.target_path ?? ""),
+        {
+          expected_source_sha256: args?.expected_source_sha256 ? String(args.expected_source_sha256) : undefined,
+          expected_target_sha256: args?.expected_target_sha256 ? String(args.expected_target_sha256) : undefined,
+        }
+      ));
     }
 
     default:

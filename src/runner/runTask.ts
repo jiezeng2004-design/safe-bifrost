@@ -23,13 +23,22 @@ import {
   compareSnapshots,
   emptyArtifactHygiene,
   writeSnapshot,
+  extractExternalDirtyFiles,
+  findNewExternalDirtyFiles,
+  buildArtifactManifest,
+  groupChangedFiles,
   type ChangedFile,
   type ChangeArtifacts,
+  type ExternalDirtyFile,
+  type ArtifactManifest,
 } from "./changeCapture.js";
+import { PatchWardenError, errorPayload } from "../errors.js";
+import { diagnoseAndroidBuild } from "../tools/androidDoctor.js";
 
 const HEARTBEAT_INTERVAL_MS = 2000;
 const GRACEFUL_KILL_MS = 2000;
 const MAX_CAPTURE_CHARS = 100_000;
+const ARTIFACT_COLLECTION_TIMEOUT_MS = 60_000;
 
 interface TaskRunResult {
   task_id: string;
@@ -97,7 +106,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   try {
     timeoutSeconds = normalizeTimeout(initialStatus.timeout_seconds, config);
   } catch (error) {
-    return failBeforeExecution(taskId, taskDir, errorMessage(error));
+    return failBeforeExecution(taskId, taskDir, errorMessage(error), error);
   }
   const startedAtMs = Date.now();
   const deadlineMs = startedAtMs + timeoutSeconds * 1000;
@@ -107,13 +116,13 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     repoPath = guardWorkspacePath(rawRepoPath, wsRoot);
   } catch (error) {
     const message = `repo_path validation failed: ${errorMessage(error)}`;
-    return failBeforeExecution(taskId, taskDir, message);
+    return failBeforeExecution(taskId, taskDir, message, error);
   }
   try {
     verifyCommands = normalizeVerifyCommands(initialStatus.verify_commands, testCommand, config, repoPath);
   } catch (error) {
     const message = `verification metadata validation failed: ${errorMessage(error)}`;
-    return failBeforeExecution(taskId, taskDir, message);
+    return failBeforeExecution(taskId, taskDir, message, error);
   }
 
   // ── Assessment freshness revalidation before execution ──
@@ -128,7 +137,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       }
     } catch (error) {
       const message = `assessment validation error: ${errorMessage(error)}`;
-      return failBeforeExecution(taskId, taskDir, message);
+      return failBeforeExecution(taskId, taskDir, message, error);
     }
   }
 
@@ -145,14 +154,17 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
 
   let beforeSnapshot;
   let beforeWorkspaceSnapshot;
+  let externalDirtyBaseline: ExternalDirtyFile[] = [];
   try {
     beforeSnapshot = captureRepoSnapshot(repoPath);
     beforeWorkspaceSnapshot = repoPath === wsRoot ? beforeSnapshot : captureRepoSnapshot(wsRoot);
     writeSnapshot(taskDir, "git-before.json", beforeSnapshot);
     writeSnapshot(taskDir, "workspace-before.json", beforeWorkspaceSnapshot);
+    // Phase 4: Record external dirty files as baseline before task execution
+    externalDirtyBaseline = extractExternalDirtyFiles(beforeWorkspaceSnapshot, repoPath, wsRoot);
   } catch (error) {
     const message = `Pre-task snapshot failed: ${errorMessage(error)}`;
-    return failBeforeExecution(taskId, taskDir, message);
+    return failBeforeExecution(taskId, taskDir, message, error);
   }
 
   let agentResult: ManagedProcessResult | null = null;
@@ -160,6 +172,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   const verifyResults: TestExecutionResult[] = [];
   let finalStatus: TaskStatus = "failed";
   let finalError: string | null = null;
+  let lastCaughtError: unknown = null;
 
   try {
     const planFile = resolve(plansDir, planId, "plan.md");
@@ -226,19 +239,42 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       finalStatus = "done";
     }
   } catch (error) {
+    lastCaughtError = error;
     finalError = errorMessage(error);
   }
 
   setTaskPhase(taskDir, "collecting_artifacts", null, "Capturing post-task state and writing reports.");
+  const artifactCollectionStartedAt = new Date().toISOString();
   let changes: ChangeArtifacts;
+  let artifactStatus: "collected" | "partial" | "failed" | "timeout" = "collected";
+  let artifactCollectionError: string | null = null;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   try {
-    const afterSnapshot = captureRepoSnapshot(repoPath);
-    writeSnapshot(taskDir, "git-after.json", afterSnapshot);
-    changes = buildChangeArtifacts(repoPath, beforeSnapshot, afterSnapshot);
+    // Phase 5: Wrap artifact collection with a timeout
+    const collectionResult = await Promise.race([
+      Promise.resolve().then(() => {
+        const afterSnapshot = captureRepoSnapshot(repoPath);
+        writeSnapshot(taskDir, "git-after.json", afterSnapshot);
+        return buildChangeArtifacts(repoPath, beforeSnapshot, afterSnapshot);
+      }),
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error("Artifact collection timed out")), ARTIFACT_COLLECTION_TIMEOUT_MS);
+      }),
+    ]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    changes = collectionResult;
   } catch (error) {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    lastCaughtError = error;
+    artifactCollectionError = errorMessage(error);
+    if (artifactCollectionError.includes("timed out")) {
+      artifactStatus = "timeout";
+    } else {
+      artifactStatus = "failed";
+    }
     changes = {
       changed_files: [],
-      diff: `(change capture failed: ${errorMessage(error)})\n`,
+      diff: `(change capture failed: ${artifactCollectionError})\n`,
       diff_available: false,
       diff_truncated: false,
       diff_size_bytes: 0,
@@ -248,17 +284,50 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       workspace_dirty_before: beforeSnapshot.workspace_dirty,
       workspace_dirty_after: beforeSnapshot.workspace_dirty,
       patch_mode: "hash_only",
-      unavailable_reason: `Change capture failed: ${errorMessage(error)}`,
+      unavailable_reason: `Change capture failed: ${artifactCollectionError}`,
       artifact_hygiene: emptyArtifactHygiene(),
     };
-    finalError ||= `Change capture failed: ${errorMessage(error)}`;
-    finalStatus = "failed";
+    // Phase 5: Write partial_result.md when artifact collection fails
+    writeFileSync(join(taskDir, "partial_result.md"), [
+      "# PatchWarden Partial Result",
+      "",
+      `Task: ${taskId}`,
+      "",
+      "## Artifact Collection Status",
+      artifactStatus,
+      "",
+      "## Error",
+      artifactCollectionError,
+      "",
+      "## Agent Status",
+      agentResult ? `Exit code: ${agentResult.exitCode}` : "Agent did not run",
+      "",
+      "## Verification Status",
+      verifyResults.length > 0 ? verifyResults.map((r) => `- ${r.command}: exit ${r.exitCode}`).join("\n") : "No verification ran",
+      "",
+      "## Note",
+      "Artifact collection did not complete. The task result may be incomplete. Review stdout.log, stderr.log, and verify.json for details.",
+      "",
+    ].join("\n"), "utf-8");
+    // Don't override test failure with artifact failure
+    if (finalStatus === "done") {
+      finalError = `Change capture failed: ${artifactCollectionError}`;
+      finalStatus = "failed";
+    } else {
+      finalError ||= `Change capture failed: ${artifactCollectionError}`;
+    }
   }
+  const artifactCollectionFinishedAt = new Date().toISOString();
 
   let outOfScopeChanges: ChangedFile[] = [];
+  let preexistingExternalDirty: ExternalDirtyFile[] = externalDirtyBaseline;
+  let newOutOfScopeChanges: ExternalDirtyFile[] = [];
   try {
     const afterWorkspaceSnapshot = repoPath === wsRoot ? captureRepoSnapshot(repoPath) : captureRepoSnapshot(wsRoot);
     writeSnapshot(taskDir, "workspace-after.json", afterWorkspaceSnapshot);
+    const allExternalDirty = extractExternalDirtyFiles(afterWorkspaceSnapshot, repoPath, wsRoot);
+    // Phase 4: Only NEW external dirty files (not in baseline) are scope violations
+    newOutOfScopeChanges = findNewExternalDirtyFiles(externalDirtyBaseline, allExternalDirty);
     outOfScopeChanges = compareSnapshots(beforeWorkspaceSnapshot, afterWorkspaceSnapshot)
       .filter((file) =>
         !isPathInside(resolve(wsRoot, file.path), repoPath) ||
@@ -269,15 +338,21 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     if (finalStatus === "done") finalStatus = "failed";
   }
 
-  if (outOfScopeChanges.length > 0) {
+  // Phase 4: Pre-existing external dirty files are warnings, not failures
+  const preexistingWarnings: string[] = preexistingExternalDirty.length > 0
+    ? [`Pre-existing external dirty files (not caused by this task): ${preexistingExternalDirty.length} file(s)`]
+    : [];
+
+  if (newOutOfScopeChanges.length > 0) {
     finalStatus = "failed_scope_violation";
-    finalError = `Detected ${outOfScopeChanges.length} change(s) outside resolved_repo_path.`;
+    finalError = `Detected ${newOutOfScopeChanges.length} new change(s) outside resolved_repo_path during task execution.`;
     writeFileSync(join(taskDir, "rollback-plan.json"), JSON.stringify({
       task_id: taskId,
       status: "review_required",
       automatic_rollback_performed: false,
       warning: "Review ownership and concurrent edits before rollback. PatchWarden did not modify or restore these files.",
-      out_of_scope_changes: outOfScopeChanges,
+      out_of_scope_changes: newOutOfScopeChanges,
+      preexisting_external_dirty_files: preexistingExternalDirty,
     }, null, 2), "utf-8");
     writeFileSync(join(taskDir, "rollback_scope_violation_plan.md"), [
       "# Scope Violation Rollback Plan",
@@ -286,8 +361,8 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       "",
       "PatchWarden did not automatically roll back any file. Review concurrent or user-owned edits before acting.",
       "",
-      "## Out-of-scope files only",
-      ...outOfScopeChanges.map((file) => `- ${file.change}: ${file.old_path ? `${file.old_path} -> ` : ""}${file.path}`),
+      "## New out-of-scope files (caused by this task)",
+      ...newOutOfScopeChanges.map((file) => `- ${file.change}: ${file.path}`),
       "",
     ].join("\n"), "utf-8");
   } else if (changePolicy === "no_changes" && changes.changed_files.length > 0) {
@@ -298,6 +373,12 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   writeFileSync(join(taskDir, "git.diff"), changes.diff, "utf-8");
   writeFileSync(join(taskDir, "diff.patch"), changes.diff, "utf-8");
   writeFileSync(join(taskDir, "changed-files.json"), JSON.stringify(changes, null, 2), "utf-8");
+
+  // Phase 6: Generate artifact_manifest.json and group changed files
+  const artifactManifest: ArtifactManifest = buildArtifactManifest(changes.changed_files, repoPath, taskId);
+  writeFileSync(join(taskDir, "artifact_manifest.json"), JSON.stringify(artifactManifest, null, 2), "utf-8");
+  const changedFileGroups = groupChangedFiles(changes.changed_files);
+
   writeFileSync(join(taskDir, "file-stats.json"), JSON.stringify({
     task_id: taskId,
     additions: changes.additions,
@@ -306,7 +387,10 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   }, null, 2), "utf-8");
   writeFileSync(join(taskDir, "test.log"), buildTestLog(testResult), "utf-8");
   const verifyJson = buildVerifyJson(verifyCommands, verifyResults, repoPath);
-  if (outOfScopeChanges.length > 0) {
+  // Phase 4: Use newOutOfScopeChanges (not outOfScopeChanges) for verify_status
+  // to stay consistent with finalStatus. Pre-existing external dirty files
+  // that didn't change during the task should NOT cause verify_status to fail.
+  if (newOutOfScopeChanges.length > 0) {
     verifyJson.status = "failed";
     verifyJson.failure_reason = "scope_violation";
   } else if (finalStatus === "failed_policy_violation") {
@@ -319,6 +403,21 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   if (!["canceled", "done", "failed_verification", "failed_scope_violation", "failed_policy_violation"].includes(finalStatus)) finalStatus = "failed";
   const finalPhase: TaskPhase = finalStatus === "done" ? "completed" : finalStatus;
   const followup = buildFailureFollowup(finalStatus, finalError, verifyJson.commands);
+
+  // Phase 7: Run Android build environment diagnostics if android_app exists
+  const androidDiagnostic = diagnoseAndroidBuild(repoPath);
+  let androidWarning: string | null = null;
+  if (androidDiagnostic.status !== "skip") {
+    if (androidDiagnostic.status === "fail") {
+      androidWarning = "Android project exists, APK not built because Android SDK is missing.";
+    } else if (androidDiagnostic.status === "warn") {
+      const apkCheck = androidDiagnostic.checks.find((c) => c.check === "APK output path");
+      if (apkCheck && apkCheck.status !== "ok") {
+        androidWarning = `Android build environment has warnings: ${apkCheck.reason}`;
+      }
+    }
+  }
+
   const resultMd = buildResultMarkdown({
     taskId,
     planId,
@@ -330,6 +429,12 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     verify: verifyJson,
     changes,
     outOfScopeChanges,
+    artifactStatus,
+    artifactManifest,
+    changedFileGroups,
+    androidDiagnostic,
+    androidWarning,
+    preexistingWarnings,
   });
   writeFileSync(join(taskDir, "result.md"), resultMd, "utf-8");
   writeFileSync(join(taskDir, "result.json"), JSON.stringify({
@@ -344,8 +449,26 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     change_policy: changePolicy,
     summary: finalError || "Agent execution and configured verification completed successfully.",
     changed_files: changes.changed_files,
+    changed_file_groups: {
+      source_changes: changedFileGroups.source_changes.length,
+      docs_changes: changedFileGroups.docs_changes.length,
+      config_changes: changedFileGroups.config_changes.length,
+      test_changes: changedFileGroups.test_changes.length,
+      release_artifacts: changedFileGroups.release_artifacts.length,
+      runtime_generated_files: changedFileGroups.runtime_generated_files.length,
+    },
     artifact_hygiene: changes.artifact_hygiene,
+    artifact_status: artifactStatus,
+    artifact_collection_error: artifactCollectionError,
+    artifact_collection_started_at: artifactCollectionStartedAt,
+    artifact_collection_finished_at: artifactCollectionFinishedAt,
+    artifact_manifest: artifactManifest,
     out_of_scope_changes: outOfScopeChanges,
+    new_out_of_scope_changes: newOutOfScopeChanges,
+    preexisting_external_dirty_files: preexistingExternalDirty,
+    target_repo_status: changes.workspace_dirty_after ? "dirty" : "clean",
+    workspace_status: changes.workspace_dirty_after ? "dirty" : "clean",
+    android_diagnostic: androidDiagnostic,
     verify_status: verifyJson.status,
     verify_commands: verifyJson.commands,
     commands_run: verifyJson.commands.map((command) => ({
@@ -356,12 +479,15 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     commands_observed: [],
     verify: verifyJson,
     artifacts: [
-      "result.md", "result.json", "diff.patch", "git.diff", "test.log", "verify.log", "verify.json", "changed-files.json", "file-stats.json",
+      "result.md", "result.json", "diff.patch", "git.diff", "test.log", "verify.log", "verify.json", "changed-files.json", "file-stats.json", "artifact_manifest.json",
       ...(outOfScopeChanges.length > 0 ? ["rollback_scope_violation_plan.md", "rollback-plan.json"] : []),
+      ...(artifactStatus !== "collected" ? ["partial_result.md"] : []),
     ],
     warnings: [
       ...beforeSnapshot.warnings,
       ...(changes.diff_truncated ? ["diff.patch was truncated; changed-files.json retains file evidence."] : []),
+      ...preexistingWarnings,
+      ...(androidWarning ? [androidWarning] : []),
     ],
     errors: finalError ? [finalError] : [],
     known_issues: finalError ? [finalError] : [],
@@ -373,7 +499,14 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       ? ["Review get_task_summary and audit_task before accepting the work."]
       : ["Resolve the reported failure before accepting the work."],
   }, null, 2), "utf-8");
-  if (finalError) writeFileSync(join(taskDir, "error.log"), finalError, "utf-8");
+  if (finalError) {
+    // Phase 9: Preserve PatchWardenError structured info in error.log
+    const structuredError = errorPayload(lastCaughtError);
+    writeFileSync(join(taskDir, "error.log"), JSON.stringify({
+      summary: finalError,
+      ...structuredError,
+    }, null, 2), "utf-8");
+  }
 
   const finishedAt = new Date().toISOString();
   updateStatus(taskDir, {
@@ -385,7 +518,13 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     error: finalError,
     changed_files: changes.changed_files.map(({ path, change }) => ({ path, change })),
     artifact_hygiene_counts: changes.artifact_hygiene.counts,
+    artifact_status: artifactStatus,
+    artifact_collection_error: artifactCollectionError,
+    artifact_collection_started_at: artifactCollectionStartedAt,
+    artifact_collection_finished_at: artifactCollectionFinishedAt,
     out_of_scope_changes: outOfScopeChanges,
+    new_out_of_scope_changes: newOutOfScopeChanges,
+    preexisting_external_dirty_files: preexistingExternalDirty,
     verify_status: verifyJson.status,
     verify_commands: verifyCommands,
     diff_available: changes.diff_available,
@@ -670,6 +809,12 @@ function buildResultMarkdown(input: {
   verify: VerifyReport;
   changes: ChangeArtifacts;
   outOfScopeChanges: ChangedFile[];
+  artifactStatus?: string;
+  artifactManifest?: ArtifactManifest;
+  changedFileGroups?: { source_changes: ChangedFile[]; docs_changes: ChangedFile[]; config_changes: ChangedFile[]; test_changes: ChangedFile[]; release_artifacts: ChangedFile[]; runtime_generated_files: ChangedFile[] };
+  androidDiagnostic?: { status: string; checks?: Array<{ check: string; status: string; reason: string }> };
+  androidWarning?: string | null;
+  preexistingWarnings?: string[];
 }): string {
   const changed = input.changes.changed_files.length
     ? input.changes.changed_files.map((file) => `- ${file.change}: ${file.path}`).join("\n")
@@ -677,6 +822,45 @@ function buildResultMarkdown(input: {
   const outOfScope = input.outOfScopeChanges.length
     ? input.outOfScopeChanges.map((file) => `- ${file.change}: ${file.old_path ? `${file.old_path} -> ` : ""}${file.path}`).join("\n")
     : "(none)";
+
+  // Phase 6: Artifact manifest summary
+  const artifactCount = input.artifactManifest?.artifacts.length || 0;
+  const artifactLines = artifactCount > 0
+    ? input.artifactManifest!.artifacts.map((a) => `- ${a.type}: ${a.path} (${a.size} bytes, sha256: ${a.sha256.slice(0, 16)}...)`).join("\n")
+    : "(no release artifacts)";
+
+  // Phase 6: Changed file group summary
+  const groupLines = input.changedFileGroups
+    ? [
+        `- source_changes: ${input.changedFileGroups.source_changes.length}`,
+        `- docs_changes: ${input.changedFileGroups.docs_changes.length}`,
+        `- config_changes: ${input.changedFileGroups.config_changes.length}`,
+        `- test_changes: ${input.changedFileGroups.test_changes.length}`,
+        `- release_artifacts: ${input.changedFileGroups.release_artifacts.length}`,
+        `- runtime_generated_files: ${input.changedFileGroups.runtime_generated_files.length}`,
+      ].join("\n")
+    : "";
+
+  // Phase 7: Android diagnostic summary
+  let androidSection = "";
+  if (input.androidDiagnostic && input.androidDiagnostic.status !== "skip") {
+    const checkLines = (input.androidDiagnostic.checks || [])
+      .map((c) => `- [${c.status}] ${c.check}: ${c.reason}`)
+      .join("\n");
+    androidSection = [
+      "## Android Build Environment",
+      `Status: ${input.androidDiagnostic.status}`,
+      ...(input.androidWarning ? [`Warning: ${input.androidWarning}`] : []),
+      checkLines,
+      "",
+    ].join("\n");
+  }
+
+  // Phase 4: Pre-existing warnings
+  const preexistingSection = input.preexistingWarnings && input.preexistingWarnings.length > 0
+    ? ["## Pre-existing Warnings", ...input.preexistingWarnings, ""].join("\n")
+    : "";
+
   return [
     "# PatchWarden Task Result",
     "",
@@ -695,6 +879,12 @@ function buildResultMarkdown(input: {
     "## Files changed",
     changed,
     "",
+    "## Changed file groups",
+    groupLines,
+    "",
+    "## Release artifacts",
+    artifactLines,
+    "",
     "## Verification",
     `- diff_available: ${input.changes.diff_available}`,
     `- diff_truncated: ${input.changes.diff_truncated}`,
@@ -703,10 +893,13 @@ function buildResultMarkdown(input: {
     `- verify_status: ${input.verify.status}`,
     `- verify_commands: ${input.verify.commands.length}/${input.verify.requested_commands.length} executed`,
     `- out_of_scope_changes: ${input.outOfScopeChanges.length}`,
+    `- artifact_status: ${input.artifactStatus || "collected"}`,
     "",
     "## Out-of-scope changes",
     outOfScope,
     "",
+    preexistingSection,
+    androidSection,
     "## Summary",
     input.error || "Agent execution and configured verification completed successfully.",
     "",
@@ -824,8 +1017,13 @@ function normalizeTimeout(value: unknown, config: ReturnType<typeof getConfig>):
   return timeout;
 }
 
-function failBeforeExecution(taskId: string, taskDir: string, message: string): TaskRunResult {
-  writeFileSync(join(taskDir, "error.log"), message, "utf-8");
+function failBeforeExecution(taskId: string, taskDir: string, message: string, caughtError?: unknown): TaskRunResult {
+  // Phase 9: Preserve PatchWardenError structured info in error.log
+  const structuredError = caughtError ? errorPayload(caughtError) : { error: message };
+  writeFileSync(join(taskDir, "error.log"), JSON.stringify({
+    summary: message,
+    ...structuredError,
+  }, null, 2), "utf-8");
   const current = readStatus(join(taskDir, "status.json"));
   const now = new Date().toISOString();
   const verify: VerifyReport = {

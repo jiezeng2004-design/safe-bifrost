@@ -147,13 +147,19 @@ export function auditTask(taskId: string): AuditTaskOutput {
     }
   }
 
-  const outOfScope = Array.isArray(statusData.out_of_scope_changes) ? statusData.out_of_scope_changes : [];
+  // Phase 4: Use new_out_of_scope_changes (task-caused) instead of out_of_scope_changes (all)
+  // Pre-existing external dirty files that didn't change during the task should NOT fail audit.
+  const newOutOfScope = Array.isArray(statusData.new_out_of_scope_changes)
+    ? statusData.new_out_of_scope_changes
+    : Array.isArray(statusData.out_of_scope_changes)
+      ? statusData.out_of_scope_changes
+      : [];
   checks.push({
     name: "scope_changes",
-    result: outOfScope.length > 0 ? "fail" : "pass",
-    detail: outOfScope.length > 0
-      ? `${outOfScope.length} out-of-scope change(s) detected.`
-      : "No out-of-scope changes recorded.",
+    result: newOutOfScope.length > 0 ? "fail" : "pass",
+    detail: newOutOfScope.length > 0
+      ? `${newOutOfScope.length} new out-of-scope change(s) detected during task execution.`
+      : "No new out-of-scope changes recorded.",
   });
 
   const changedFilesFile = join(taskDir, "changed-files.json");
