@@ -14,7 +14,9 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+const expectedServerVersion = packageJson.version;
 const tempRoot = mkdtempSync(join(tmpdir(), "patchwarden-mcp-"));
 const workspaceRoot = join(tempRoot, "workspace");
 const configPath = join(tempRoot, "patchwarden.config.json");
@@ -212,7 +214,7 @@ try {
     test_command: "npm test",
   });
   if (
-    task.server_version !== "0.6.1" ||
+    task.server_version !== expectedServerVersion ||
     !/^[a-f0-9]{64}$/.test(task.tool_manifest_sha256 || "") ||
     task.next_tool_call?.name !== "wait_for_task" ||
     task.next_tool_call?.arguments?.timeout_seconds !== 25

@@ -15,7 +15,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
-const root = resolve(scriptDir, "..");
+const root = resolve(scriptDir, "..", "..");
 const releaseDir = resolve(root, "release");
 const archivePath = resolve(root, "patchwarden-release.tar.gz");
 
@@ -29,7 +29,13 @@ const include = [
   "examples",
   "scripts",
   "src",
+  "ui",
   "PatchWarden.cmd",
+  "PatchWarden-Control.cmd",
+  "PatchWarden-Control-Tray.cmd",
+  "PatchWarden-Desktop.cmd",
+  "Restart-PatchWarden-Control.cmd",
+  "Stop-PatchWarden.cmd",
   ".gitignore",
   "LICENSE",
   "README.md",
@@ -42,6 +48,8 @@ const forbidden = [
   /(^|[\\/])node_modules([\\/]|$)/,
   /(^|[\\/])\.patchwarden([\\/]|$)/,
   /(^|[\\/])\.safe-bifrost([\\/]|$)/,
+  /(^|[\\/])\.local([\\/]|$)/,
+  /(^|[\\/])\.tmp([\\/]|$)/,
   /(^|[\\/])patchwarden\.config\.json$/,
   /(^|[\\/])safe-bifrost\.config\.json$/,
   /\.local\.(cmd|ps1)$/i,

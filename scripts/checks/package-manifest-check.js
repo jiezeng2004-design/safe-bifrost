@@ -45,7 +45,8 @@ if (leaked.length > 0) {
 
 const required = [
   "PatchWarden.cmd",
-  "scripts/manage-patchwarden.ps1",
+  "PatchWarden-Desktop.cmd",
+  "scripts/control/manage-patchwarden.ps1",
   "scripts/launchers/Start-PatchWarden-Tunnel.cmd",
   "scripts/launchers/Start-PatchWarden-Direct-Tunnel.cmd",
 ];

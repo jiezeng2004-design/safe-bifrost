@@ -11,8 +11,8 @@ if (process.platform !== "win32") {
 }
 
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
-const root = resolve(scriptDir, "..");
-const manager = join(scriptDir, "manage-patchwarden.ps1");
+const root = resolve(scriptDir, "..", "..");
+const manager = join(root, "scripts", "control", "manage-patchwarden.ps1");
 const temp = mkdtempSync(join(tmpdir(), "patchwarden-control-smoke-"));
 const mockConfig = join(temp, "patchwarden.config.json");
 writeFileSync(mockConfig, JSON.stringify({
@@ -139,7 +139,13 @@ try {
 
   const expectedFiles = [
     "PatchWarden.cmd",
-    "scripts/manage-patchwarden.ps1",
+    "PatchWarden-Control.cmd",
+    "PatchWarden-Control-Tray.cmd",
+    "PatchWarden-Desktop.cmd",
+    "Restart-PatchWarden-Control.cmd",
+    "Stop-PatchWarden.cmd",
+    "scripts/control/manage-patchwarden.ps1",
+    "scripts/control/stop-patchwarden.ps1",
     "scripts/launchers/Start-PatchWarden-Tunnel.cmd",
     "scripts/launchers/Start-PatchWarden-Direct-Tunnel.cmd",
   ];
@@ -151,6 +157,14 @@ try {
   const rootEntry = readFileSync(join(root, "PatchWarden.cmd"), "utf8");
   if (!rootEntry.includes("manage-patchwarden.ps1")) {
     throw new Error("PatchWarden.cmd does not invoke the consolidated manager");
+  }
+  const stopEntry = readFileSync(join(root, "Stop-PatchWarden.cmd"), "utf8");
+  if (!stopEntry.includes("scripts\\control\\stop-patchwarden.ps1")) {
+    throw new Error("Stop-PatchWarden.cmd does not invoke the one-click shutdown script");
+  }
+  const desktopEntry = readFileSync(join(root, "PatchWarden-Desktop.cmd"), "utf8");
+  if (!desktopEntry.includes("control-center-tray.ps1") || !desktopEntry.includes("WindowStyle Hidden")) {
+    throw new Error("PatchWarden-Desktop.cmd must launch the tray hidden as the daily desktop entry");
   }
   console.log("ok - control handles orphan cleanup, scoped kill, port conflicts, health fallback, and Core/Direct lifecycle actions");
 } finally {

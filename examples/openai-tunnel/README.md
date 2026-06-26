@@ -15,7 +15,7 @@ or local private paths.
 
 1. Configure `patchwarden.config.json`.
 2. Run `npm.cmd run build`.
-3. Use `scripts/patchwarden-mcp-stdio.cmd` as the tunnel MCP command.
+3. Use `scripts/mcp/patchwarden-mcp-stdio.cmd` as the tunnel MCP command.
 4. Start `npm.cmd run watch` in a separate terminal.
 5. Start `tunnel-client run` or use `PatchWarden.cmd start core`.
 6. Create a ChatGPT Connector using the tunnel channel.
@@ -25,10 +25,10 @@ or local private paths.
 
 For ChatGPT Direct editing, set `enableDirectProfile: true` in the trusted
 local config and run `PatchWarden.cmd start direct`. It uses
-`scripts/patchwarden-mcp-direct.cmd`, the separate `patchwarden-direct` Tunnel
+`scripts/mcp/patchwarden-mcp-direct.cmd`, the separate `patchwarden-direct` Tunnel
 Client profile, no Watcher, and an isolated `runtime-direct` status directory.
-Use a separate Direct Connector/Tunnel ID so the fixed 16-tool Core catalog and
-the 9-tool Direct catalog never overwrite each other's cached schema.
+Use a separate Direct Connector/Tunnel ID so the fixed 17-tool Core catalog and
+the 10-tool Direct catalog never overwrite each other's cached schema.
 
 The Windows launcher prompts for the runtime API key once and stores only a
 Windows DPAPI-encrypted value under `%APPDATA%\patchwarden`. Use
@@ -38,7 +38,7 @@ Before the launcher starts the tunnel it performs a real MCP stdio handshake
 and requires the exact `chatgpt_core` manifest. Run
 `PatchWarden.cmd health` to see the version, profile, tool names, schema
 hash, process sources, and any mixed-version warnings. The check is read-only.
-The v0.4.1 core manifest contains 16 tools. A different count or schema hash
+The v0.6.1 core manifest contains 17 tools. A different count or schema hash
 requires a Connector refresh and validation from a new ChatGPT conversation.
 
 ## Architecture

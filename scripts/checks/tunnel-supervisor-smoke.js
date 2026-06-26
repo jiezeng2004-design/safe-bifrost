@@ -10,7 +10,7 @@ if (process.platform !== "win32") {
   process.exit(0);
 }
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const temp = mkdtempSync(join(tmpdir(), "patchwarden-tunnel-smoke-"));
 const mockJs = join(temp, "mock-tunnel-client.js");
 const mockCmd = join(temp, "mock-tunnel-client.cmd");
@@ -57,7 +57,7 @@ if(command==='run'){
     MOCK_TUNNEL_STATE: stateFile,
   };
   const result = spawnSync("powershell.exe", [
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "start-patchwarden-tunnel.ps1"),
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(root, "scripts", "control", "start-patchwarden-tunnel.ps1"),
     "-TunnelId", "tunnel_smoke_fixture",
     "-TunnelClientExe", mockCmd,
     "-ConfigPath", mockConfig,

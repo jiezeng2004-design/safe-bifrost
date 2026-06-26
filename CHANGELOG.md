@@ -1,5 +1,24 @@
 # PatchWarden CHANGELOG
 
+## v0.6.4 (2026-06-26)
+
+### Desktop Experience
+
+- Added `PatchWarden-Desktop.cmd` as the daily desktop entry. It starts the tray and ensures Control Center is available without opening extra browser windows.
+- Updated `PatchWarden-Control-Tray.cmd` so normal launches hide the PowerShell host, while `--foreground` remains available for debugging.
+- Refined the WinForms tray layer with a PatchWarden-styled shield icon, single-instance protection, clearer startup/status balloons, and quick actions for Open Dashboard, Start All, Stop All, Restart All, Open Logs, and Quit Tray.
+
+### Control Center Lifecycle
+
+- Control Center lifecycle actions now call the Windows manager with `-Background` and `windowsHide: true`, so Start All and Restart All launch Core/Direct supervisors without long-lived visible terminal windows.
+- Added `-NoTunnelWebUi` to the tunnel launcher and use it from desktop/background flows so tunnel-client does not open extra browser windows unless a user explicitly opens the dashboard.
+- Clarified Stop All versus Quit Tray: Stop All stops Core/Direct while keeping tray/dashboard available; `Stop-PatchWarden.cmd` is the one-click shutdown for Core/Direct, Control Center, and tray.
+
+### Verification
+
+- Extended control and Control Center smoke coverage for the new desktop entry, tray contract, background lifecycle, and package manifest.
+- Added the desktop entry to npm/package and release archive verification.
+
 ## v0.6.1 (2026-06-25)
 
 ### Stability & Correctness

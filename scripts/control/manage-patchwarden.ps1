@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [Parameter(Position = 0)]
   [ValidateSet("menu", "start", "stop", "restart", "status", "health", "reset-key", "kill")]
@@ -11,13 +11,14 @@ param(
   [switch]$SkipBuild,
   [switch]$WhatIf,
   [switch]$Json,
+  [switch]$Background,
   [int]$KillTimeoutSeconds = 10
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
-$LauncherDirectory = Join-Path $PSScriptRoot "launchers"
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$LauncherDirectory = Join-Path $ProjectRoot "scripts\launchers"
 $LocalLauncherDirectory = Join-Path $ProjectRoot ".local\launchers"
 $PatchWardenRuntimeRoot = Join-Path $env:LOCALAPPDATA "patchwarden"
 
@@ -518,7 +519,32 @@ function Start-Mode {
   }
   Assert-NoUnsafePortConflicts -Definitions @($Definition)
 
-  $launcher = if (Test-Path -LiteralPath $Definition.LocalLauncher) { $Definition.LocalLauncher } else { $Definition.GenericLauncher }
+  if ($Background) {
+    $launcherScript = Join-Path $PSScriptRoot "start-patchwarden-tunnel.ps1"
+    if (-not (Test-Path -LiteralPath $launcherScript)) { throw "Launcher script not found: $launcherScript" }
+    $healthListenAddr = ([Uri]$Definition.HealthBaseUrl).Authority
+    $arguments = @(
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $launcherScript,
+      "-ToolProfile", $Definition.ToolProfile,
+      "-Profile", $Definition.Profile,
+      "-HealthListenAddr", $healthListenAddr,
+      "-NoTunnelWebUi"
+    )
+    if (-not $Definition.HasWatcher) { $arguments += "-SkipWatcher" }
+    if ($WhatIf) {
+      Write-Host "[start:$($Definition.Key)] WHAT-IF: start hidden supervisor for $($Definition.Profile)" -ForegroundColor Magenta
+      return
+    }
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden
+    Write-Host "[start:$($Definition.Key)] Started hidden supervisor PID $($process.Id). Logs: $($Definition.RuntimeDirectory)" -ForegroundColor Green
+    return
+  }
+
+  # Prefer the project's built-in launcher (scripts\launchers\*.cmd) over
+  # .local\launchers\*.local.cmd. A .local launcher, if present, MUST call
+  # the project root scripts\launchers\*.cmd via relative path (..\..\scripts\launchers\*),
+  # NOT assume its own directory contains the target script.
+  $launcher = if (Test-Path -LiteralPath $Definition.GenericLauncher) { $Definition.GenericLauncher } else { $Definition.LocalLauncher }
   if (-not (Test-Path -LiteralPath $launcher)) { throw "Launcher not found: $launcher" }
   $launcherName = Split-Path -Leaf $launcher
   if ($WhatIf) {

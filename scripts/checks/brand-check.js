@@ -12,8 +12,8 @@ const allowedLegacyFiles = new Set([
   "docs/release-v0.3.0.md",
   "docs/release-v0.4.0.md",
   "docs/release-v0.6.0.md",
-  "scripts/brand-check.js",
-  "scripts/pack-clean.js",
+  "scripts/checks/brand-check.js",
+  "scripts/release/pack-clean.js",
 ]);
 const legacyPattern = /safe-bifrost|Safe-Bifrost|SAFE_BIFROST|SafeBifrost|safe_bifrost/;
 

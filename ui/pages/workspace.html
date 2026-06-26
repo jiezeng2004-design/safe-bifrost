@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-zh="工作区 - PatchWarden" data-en="Workspace - PatchWarden">工作区 - PatchWarden</title>
+    <style id="theme-vars">
+/* PatchWarden Brand CSS — Dark Security Theme */
+/* Prefix: pw */
+
+:root {
+  /* ── Primary Palette ── */
+  --pw-bg: #0a0e14;
+  --pw-bg-elevated: #111820;
+  --pw-bg-surface: #161d27;
+  --pw-bg-hover: #1c2533;
+  --pw-bg-active: #222d3d;
+  --pw-border: #1e2a3a;
+  --pw-border-subtle: #172030;
+  --pw-border-focus: #2dd4a8;
+
+  /* ── Text ── */
+  --pw-text-primary: #e8edf4;
+  --pw-text-secondary: #8b99ad;
+  --pw-text-tertiary: #5a6a80;
+  --pw-text-inverse: #0a0e14;
+  --pw-text-accent: #2dd4a8;
+
+  /* ── Brand Accent — Security Green ── */
+  --pw-accent: #2dd4a8;
+  --pw-accent-hover: #34eabc;
+  --pw-accent-muted: rgba(45, 212, 168, 0.12);
+  --pw-accent-subtle: rgba(45, 212, 168, 0.06);
+
+  /* ── State Colors ── */
+  --pw-state-success: #22c55e;
+  --pw-state-success-bg: rgba(34, 197, 94, 0.1);
+  --pw-state-warning: #f59e0b;
+  --pw-state-warning-bg: rgba(245, 158, 11, 0.1);
+  --pw-state-error: #ef4444;
+  --pw-state-error-bg: rgba(239, 68, 68, 0.1);
+  --pw-state-info: #3b82f6;
+  --pw-state-info-bg: rgba(59, 130, 246, 0.1);
+
+  /* ── Radius ── */
+  --pw-radius-sm: 4px;
+  --pw-radius-md: 8px;
+  --pw-radius-lg: 12px;
+  --pw-radius-full: 9999px;
+
+  /* ── Shadows — static surfaces use border only; floating layers use subtle shadow ── */
+  --pw-shadow-float: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --pw-shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* ── Typography ── */
+  --pw-font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --pw-font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+
+  --pw-text-xs: 0.75rem;
+  --pw-text-sm: 0.8125rem;
+  --pw-text-base: 0.875rem;
+  --pw-text-lg: 1rem;
+  --pw-text-xl: 1.25rem;
+  --pw-text-2xl: 1.5rem;
+  --pw-text-3xl: 2rem;
+
+  --pw-leading-tight: 1.25;
+  --pw-leading-normal: 1.5;
+  --pw-leading-relaxed: 1.625;
+
+  --pw-weight-normal: 400;
+  --pw-weight-medium: 500;
+  --pw-weight-semibold: 600;
+  --pw-weight-bold: 700;
+
+  /* ── Spacing ── */
+  --pw-space-1: 4px;
+  --pw-space-2: 8px;
+  --pw-space-3: 12px;
+  --pw-space-4: 16px;
+  --pw-space-5: 20px;
+  --pw-space-6: 24px;
+  --pw-space-8: 32px;
+  --pw-space-10: 40px;
+  --pw-space-12: 48px;
+
+  /* ── Transitions ── */
+  --pw-transition-fast: 150ms ease;
+  --pw-transition-base: 200ms ease;
+  --pw-transition-slow: 300ms ease;
+}
+
+html.dark {
+  --pw-bg: #0a0e14;
+  --pw-bg-elevated: #111820;
+  --pw-bg-surface: #161d27;
+  --pw-bg-hover: #1c2533;
+  --pw-bg-active: #222d3d;
+  --pw-border: #1e2a3a;
+  --pw-border-subtle: #172030;
+  --pw-text-primary: #e8edf4;
+  --pw-text-secondary: #8b99ad;
+  --pw-text-tertiary: #5a6a80;
+}
+
+    </style>
+    <script src="/vendor/tailwindcss-browser.js"></script>
+    <script src="/vendor/lucide.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-accent: var(--pw-accent);
+    --color-border: var(--pw-border);
+  }
+  @layer base {
+    body { background: var(--pw-background); color: var(--pw-text-primary); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+      .pw-spin {
+        animation: pw-spin 0.9s linear infinite;
+      }
+      @keyframes pw-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
+</head>
+
+<body class="flex h-screen overflow-hidden">
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="flex flex-col w-60 shrink-0 h-screen" style="background-color: var(--pw-bg); border-right: 1px solid var(--pw-border);">
+
+    <!-- Logo Area -->
+    <div class="flex items-center gap-3 px-5 py-5" style="border-bottom: 1px solid var(--pw-border-subtle);">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+      <span class="truncate text-lg font-semibold tracking-tight" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">PatchWarden</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 flex flex-col gap-1 px-3 pt-4 overflow-y-auto">
+
+      <a href="/pages/dashboard.html" data-nav-key="dashboard" data-dom-id="nav-dashboard" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span class="truncate" data-zh="控制台" data-en="Dashboard">控制台</span>
+      </a>
+
+      <a href="/pages/tasks.html" data-nav-key="tasks" data-dom-id="nav-tasks" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span class="truncate" data-zh="任务面板" data-en="Tasks">任务面板</span>
+      </a>
+
+      <a href="/pages/workspace.html" data-nav-key="workspace" data-active="true" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>
+        </svg>
+        <span class="truncate" data-zh="工作区" data-en="Workspace">工作区</span>
+      </a>
+
+      <a href="/pages/audit.html" data-nav-key="audit" data-dom-id="nav-audit" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <span class="truncate" data-zh="审计日志" data-en="Audit Log">审计日志</span>
+      </a>
+
+      <a href="/pages/direct-sessions.html" data-nav-key="direct-sessions" data-dom-id="nav-direct-sessions" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+          <line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+        <span class="truncate" data-zh="Direct 会话" data-en="Direct Sessions">Direct 会话</span>
+      </a>
+
+      <a href="/pages/logs.html" data-nav-key="logs" data-dom-id="nav-logs" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span class="truncate" data-zh="日志" data-en="Logs">日志</span>
+      </a>
+
+    </nav>
+
+    <!-- Bottom Section -->
+    <div class="px-5 py-4" style="border-top: 1px solid var(--pw-border-subtle);">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-xs font-medium px-2 py-0.5 rounded-md whitespace-nowrap" style="color: var(--pw-text-tertiary); background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-mono);">Core v0.6.0</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="shrink-0 w-2 h-2 rounded-full" style="background-color: var(--pw-state-success);"></span>
+        <span class="text-xs truncate" style="color: var(--pw-text-tertiary);">Connected</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ========== MAIN AREA ========== -->
+  <div class="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
+
+    <!-- Top Bar -->
+    <header class="flex items-center justify-between shrink-0 px-6 py-3" style="border-bottom: 1px solid var(--pw-border); background-color: var(--pw-bg);">
+      <h1 class="text-lg font-semibold truncate min-w-0" style="color: var(--pw-text-primary); font-family: var(--pw-font-sans); text-wrap: balance; word-break: keep-all; overflow-wrap: break-word;" data-zh="工作区" data-en="Workspace">
+        工作区
+      </h1>
+
+      <div class="flex items-center gap-4 shrink-0">
+        <span id="lastUpdated" class="text-xs whitespace-nowrap hidden" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);"></span>
+        <button id="refreshBtn" class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors" style="background-color: var(--pw-bg-surface); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);">
+          <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span data-zh="刷新" data-en="Refresh">刷新</span>
+        </button>
+        <div class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold" style="background-color: var(--pw-accent-muted); color: var(--pw-accent); font-family: var(--pw-font-mono);">
+          PW
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Content Area -->
+    <main class="flex-1 overflow-y-auto p-6" style="background-color: var(--pw-bg-elevated);">
+
+      <!-- ===== Error Banner ===== -->
+      <div id="error-banner" class="hidden mb-5 rounded-lg px-4 py-3 flex items-start gap-3" style="background-color: var(--pw-state-error-bg); border: 1px solid var(--pw-state-error);">
+        <svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium" style="color: var(--pw-state-error);" data-zh="加载失败" data-en="Load Failed">加载失败</p>
+          <p id="error-message" class="text-xs mt-1 break-words" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);"></p>
+        </div>
+        <button id="retry-btn" class="shrink-0 px-3 py-1 rounded-md text-xs font-medium transition-colors" style="background-color: var(--pw-bg-hover); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);" data-zh="重试" data-en="Retry">重试</button>
+      </div>
+
+      <!-- ===== Workspace Path Card ===== -->
+      <div class="mb-6 rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border); border-left: 3px solid var(--pw-accent);">
+        <div class="flex items-center gap-2 px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>
+          </svg>
+          <h2 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary);" data-zh="工作区路径" data-en="Workspace Root">工作区路径</h2>
+        </div>
+        <div class="px-4 py-3 flex items-center gap-3 min-w-0">
+          <svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
+          </svg>
+          <code id="workspace-root" class="text-sm truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);" data-zh="加载中..." data-en="Loading...">加载中...</code>
+        </div>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+        <!-- Left Column: Projects (~40%) -->
+        <div class="lg:col-span-2">
+
+          <!-- 项目列表 Card -->
+          <div class="rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border);">
+            <!-- Card Header -->
+            <div class="flex items-center justify-between px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">
+              <div class="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <h2 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary);" data-zh="项目列表" data-en="Projects">项目列表</h2>
+              </div>
+              <span id="projects-count" class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);">--</span>
+            </div>
+
+            <!-- Project list body -->
+            <div id="projects-body" class="p-4" style="font-family: var(--pw-font-mono); font-size: var(--pw-text-sm);">
+              <!-- Loading state -->
+              <div id="projects-loading" class="py-10 text-center">
+                <svg class="pw-spin inline-block mb-2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"/>
+                  <line x1="12" y1="18" x2="12" y2="22"/>
+                  <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+                  <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+                  <line x1="2" y1="12" x2="6" y2="12"/>
+                  <line x1="18" y1="12" x2="22" y2="12"/>
+                </svg>
+                <p class="text-xs" style="color: var(--pw-text-tertiary);" data-zh="加载中..." data-en="Loading...">加载中...</p>
+              </div>
+              <!-- Empty state -->
+              <div id="projects-empty" class="hidden py-10 text-center">
+                <svg class="inline-block mb-2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <p class="text-xs" style="color: var(--pw-text-tertiary);" data-zh="暂无项目" data-en="No projects">暂无项目</p>
+              </div>
+              <!-- Rendered project list -->
+              <div id="projects-list" class="hidden flex flex-col gap-1"></div>
+            </div>
+          </div>
+
+          <!-- Repo status panel (on-demand git status) -->
+          <div id="repo-status-panel" class="hidden mt-4 rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border);">
+            <!-- populated by renderRepoStatusPanel -->
+          </div>
+
+        </div>
+
+        <!-- Right Column: Config + Agents (~60%) -->
+        <div class="lg:col-span-3 flex flex-col gap-6">
+
+          <!-- 配置预览 Card -->
+          <div class="rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border);">
+            <!-- Card Header -->
+            <div class="flex items-center justify-between px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">
+              <div class="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <h2 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary);" data-zh="配置预览" data-en="Config Preview">配置预览</h2>
+              </div>
+              <span class="text-xs px-2 py-0.5 rounded-md whitespace-nowrap" style="color: var(--pw-text-tertiary); background-color: var(--pw-bg-hover); font-family: var(--pw-font-mono);">patchwarden.config.json</span>
+            </div>
+
+            <!-- Config rows -->
+            <div id="config-body" class="p-4">
+              <!-- Loading -->
+              <div id="config-loading" class="py-6 text-center">
+                <svg class="pw-spin inline-block mb-2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"/>
+                  <line x1="12" y1="18" x2="12" y2="22"/>
+                  <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+                  <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+                  <line x1="2" y1="12" x2="6" y2="12"/>
+                  <line x1="18" y1="12" x2="22" y2="12"/>
+                </svg>
+                <p class="text-xs" style="color: var(--pw-text-tertiary);" data-zh="加载中..." data-en="Loading...">加载中...</p>
+              </div>
+              <div id="config-rows" class="hidden flex flex-col"></div>
+            </div>
+          </div>
+
+          <!-- Agent 注册 Card -->
+          <div class="rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border);">
+            <!-- Card Header -->
+            <div class="flex items-center justify-between px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">
+              <div class="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <h2 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary);" data-zh="Agent 注册" data-en="Agent Registry">Agent 注册</h2>
+              </div>
+              <span id="agents-count" class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary);" data-zh="-- 个 Agent" data-en="-- Agents">-- 个 Agent</span>
+            </div>
+
+            <!-- Agent Cards Grid -->
+            <div class="p-4">
+              <!-- Loading -->
+              <div id="agents-loading" class="py-6 text-center">
+                <svg class="pw-spin inline-block mb-2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"/>
+                  <line x1="12" y1="18" x2="12" y2="22"/>
+                  <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+                  <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+                  <line x1="2" y1="12" x2="6" y2="12"/>
+                  <line x1="18" y1="12" x2="22" y2="12"/>
+                </svg>
+                <p class="text-xs" style="color: var(--pw-text-tertiary);" data-zh="加载中..." data-en="Loading...">加载中...</p>
+              </div>
+              <!-- Empty -->
+              <div id="agents-empty" class="hidden py-6 text-center">
+                <svg class="inline-block mb-2" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                </svg>
+                <p class="text-xs" style="color: var(--pw-text-tertiary);" data-zh="未注册任何 Agent" data-en="No agents registered">未注册任何 Agent</p>
+              </div>
+              <!-- Rendered agent grid -->
+              <div id="agents-grid" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- 安全边界 Card (full width at bottom) -->
+      <div class="mt-6 rounded-lg" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border);">
+        <!-- Card Header -->
+        <div class="flex items-center gap-2 px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <h2 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary);" data-zh="安全边界" data-en="Security Boundaries">安全边界</h2>
+        </div>
+
+        <!-- Security Items -->
+        <div class="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          <!-- 工作区隔离 -->
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background-color: var(--pw-bg); border: 1px solid var(--pw-border-subtle);">
+            <div class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style="background-color: var(--pw-state-success-bg);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium truncate" style="color: var(--pw-text-primary);" data-zh="工作区隔离" data-en="Workspace Isolation">工作区隔离</h3>
+              <p class="text-xs mt-1 truncate" style="color: var(--pw-text-tertiary);" data-zh="workspaceRoot 路径限制" data-en="workspaceRoot path restriction">workspaceRoot 路径限制</p>
+            </div>
+          </div>
+
+          <!-- 命令白名单 -->
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background-color: var(--pw-bg); border: 1px solid var(--pw-border-subtle);">
+            <div class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style="background-color: var(--pw-state-success-bg);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium truncate" style="color: var(--pw-text-primary);" data-zh="命令白名单" data-en="Command Allowlist">命令白名单</h3>
+              <p class="text-xs mt-1 truncate" style="color: var(--pw-text-tertiary);" data-zh="精确匹配 allowedTestCommands" data-en="Exact match allowedTestCommands">精确匹配 allowedTestCommands</p>
+            </div>
+          </div>
+
+          <!-- 敏感文件 -->
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background-color: var(--pw-bg); border: 1px solid var(--pw-border-subtle);">
+            <div class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style="background-color: var(--pw-state-success-bg);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium truncate" style="color: var(--pw-text-primary);" data-zh="敏感文件" data-en="Sensitive Files">敏感文件</h3>
+              <p class="text-xs mt-1 truncate" style="color: var(--pw-text-tertiary);" data-zh=".env / credentials 已屏蔽" data-en=".env / credentials blocked">.env / credentials 已屏蔽</p>
+            </div>
+          </div>
+
+          <!-- Repo clean 状态（按需接口） -->
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background-color: var(--pw-bg); border: 1px solid var(--pw-border-subtle);">
+            <div class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style="background-color: var(--pw-state-success-bg);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium truncate" style="color: var(--pw-text-primary);" data-zh="Repo Clean 状态" data-en="Repo Clean Status">Repo Clean 状态</h3>
+              <p class="text-xs mt-1 truncate" style="color: var(--pw-text-tertiary);" data-zh="按需 git status（点击检查）" data-en="On-demand git status (click Check)">按需 git status（点击检查）</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Active nav item styling + sidebar hover states -->
+  <style>
+    /* Nav item base hover */
+    [data-nav-key] {
+      transition: background-color var(--pw-transition-fast), color var(--pw-transition-fast);
+    }
+    [data-nav-key]:hover {
+      background-color: var(--pw-bg-hover);
+      color: var(--pw-text-primary);
+    }
+    /* Active nav item */
+    [data-nav-key][data-active="true"] {
+      background-color: var(--pw-accent-subtle);
+      color: var(--pw-accent);
+      border-left: 3px solid var(--pw-accent);
+      padding-left: 9px;
+    }
+    /* Search input focus */
+    input[type="text"]:focus {
+      border-color: var(--pw-border-focus);
+      background-color: var(--pw-bg-hover);
+    }
+    input[type="text"]::placeholder {
+      color: var(--pw-text-tertiary);
+    }
+  </style>
+
+  <!-- Lucide init -->
+  <script>lucide.createIcons();</script>
+
+    <style>
+    @layer base {
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--pw-bg);
+        color: var(--pw-text-primary);
+        font-family: var(--pw-font-sans);
+        font-size: var(--pw-text-base);
+        line-height: var(--pw-leading-normal);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+    }
+  </style>
+
+  <!-- Workspace data loader -->
+  <script>
+  (function () {
+    'use strict';
+
+    var API_URL = '/api/workspace';
+
+    // ---------- Utilities ----------
+    function $(id) { return document.getElementById(id); }
+
+    function escapeHtml(s) {
+      if (s === null || s === undefined) return '';
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function fmtTime(s) {
+      if (!s) return '—';
+      var d = new Date(s);
+      if (isNaN(d.getTime())) return escapeHtml(s);
+      return d.toLocaleString();
+    }
+
+    function hide(el) { if (el) el.classList.add('hidden'); }
+    function show(el) { if (el) el.classList.remove('hidden'); }
+
+    function showError(msg) {
+      var banner = $('error-banner');
+      var message = $('error-message');
+      if (message) message.textContent = msg || '未知错误';
+      if (banner) show(banner);
+    }
+
+    function clearError() {
+      var banner = $('error-banner');
+      if (banner) hide(banner);
+    }
+
+    function setRefreshing(isRefreshing) {
+      var icon = $('refreshIcon');
+      if (!icon) return;
+      if (isRefreshing) {
+        icon.classList.add('pw-spin');
+      } else {
+        icon.classList.remove('pw-spin');
+      }
+    }
+
+    function setLastUpdated() {
+      var el = $('lastUpdated');
+      if (!el) return;
+      el.textContent = '更新于 ' + fmtTime(new Date().toISOString());
+      show(el);
+    }
+
+    // ---------- Render: Workspace root ----------
+    function renderWorkspaceRoot(root) {
+      var el = $('workspace-root');
+      if (!el) return;
+      if (root) {
+        el.textContent = root;
+        el.removeAttribute('data-zh');
+        el.removeAttribute('data-en');
+      } else {
+        el.textContent = '未配置工作区根目录';
+      }
+    }
+
+    // ---------- Render: Projects ----------
+    function renderProjects(directories) {
+      var countEl = $('projects-count');
+      var listEl = $('projects-list');
+      var loadingEl = $('projects-loading');
+      var emptyEl = $('projects-empty');
+      if (!listEl) return;
+
+      hide(loadingEl);
+      hide(emptyEl);
+      listEl.innerHTML = '';
+
+      var dirs = Array.isArray(directories) ? directories : [];
+      if (countEl) countEl.textContent = dirs.length + ' 个目录';
+
+      if (dirs.length === 0) {
+        show(emptyEl);
+        hide(listEl);
+        return;
+      }
+
+      var html = '';
+      for (var i = 0; i < dirs.length; i++) {
+        var name = dirs[i];
+        var isHidden = String(name).charAt(0) === '.';
+        var folderColor = isHidden ? 'var(--pw-accent)' : 'var(--pw-accent)';
+        var nameColor = isHidden ? 'var(--pw-text-secondary)' : 'var(--pw-text-primary)';
+        var safeName = escapeHtml(name);
+        html +=
+          '<div class="flex items-center gap-2 py-1.5 px-2 rounded transition-colors" style="color: ' + nameColor + ';" '
+          + 'onmouseover="this.style.backgroundColor=\'var(--pw-bg-hover)\'" '
+          + 'onmouseout="this.style.backgroundColor=\'transparent\'">'
+          + '<svg class="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + folderColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
+          + '</svg>'
+          + '<span class="truncate flex-1 min-w-0" title="' + safeName + '">' + safeName + '/</span>'
+          + '<button class="repo-check-btn shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors" '
+          + 'data-repo="' + safeName + '" '
+          + 'style="background-color: var(--pw-bg-hover); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);" '
+          + 'onmouseover="this.style.backgroundColor=\'var(--pw-bg-active)\'" '
+          + 'onmouseout="this.style.backgroundColor=\'var(--pw-bg-hover)\'">'
+          + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+          + '<span data-zh="检查" data-en="Check">检查</span>'
+          + '</button>'
+          + '</div>';
+      }
+      listEl.innerHTML = html;
+      show(listEl);
+
+      // Wire up the check buttons.
+      var buttons = listEl.querySelectorAll('.repo-check-btn');
+      for (var j = 0; j < buttons.length; j++) {
+        buttons[j].addEventListener('click', function (ev) {
+          ev.preventDefault();
+          var repo = ev.currentTarget.getAttribute('data-repo');
+          if (repo) checkRepoStatus(repo, ev.currentTarget);
+        });
+      }
+    }
+
+    // ---------- Repo status (on-demand) ----------
+    function checkRepoStatus(repo, btnEl) {
+      var panelEl = $('repo-status-panel');
+      if (!panelEl) return;
+
+      // Loading state on button.
+      var origHtml = btnEl ? btnEl.innerHTML : null;
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<span class="inline-block w-2.5 h-2.5 align-middle border-2 border-current border-t-transparent rounded-full pw-spin"></span>';
+      }
+
+      var url = '/api/workspace/' + encodeURIComponent(repo) + '/status';
+      fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+        .then(function (res) {
+          return res.json().then(function (data) { return { ok: res.ok, status: res.status, data: data }; });
+        })
+        .then(function (r) {
+          renderRepoStatusPanel(repo, r);
+        })
+        .catch(function (err) {
+          renderRepoStatusPanel(repo, { ok: false, status: 0, data: { error: (err && err.message) || 'network error' } });
+        })
+        .finally(function () {
+          if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.innerHTML = origHtml;
+          }
+        });
+    }
+
+    function renderRepoStatusPanel(repo, r) {
+      var panelEl = $('repo-status-panel');
+      if (!panelEl) return;
+      show(panelEl);
+
+      var data = r.data || {};
+      if (!r.ok) {
+        var errMsg = data.error || ('HTTP ' + r.status);
+        panelEl.innerHTML =
+          '<div class="flex items-center justify-between px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">'
+          + '<div class="flex items-center gap-2 min-w-0">'
+          + '<svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+          + '<h3 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(repo) + '</h3>'
+          + '</div>'
+          + '</div>'
+          + '<div class="px-4 py-3 text-xs" style="color: var(--pw-state-error); font-family: var(--pw-font-mono);">' + escapeHtml(errMsg) + '</div>';
+        return;
+      }
+
+      var isGit = data.is_git_repo !== false;
+      var isClean = !!data.is_clean;
+      var changed = data.changed_files_count != null ? data.changed_files_count : 0;
+      var untracked = data.untracked_count != null ? data.untracked_count : 0;
+      var modified = data.modified_count != null ? data.modified_count : 0;
+      var shortStatus = data.short_status || '';
+
+      var headColor = isGit ? (isClean ? 'var(--pw-state-success)' : 'var(--pw-state-warning)') : 'var(--pw-text-tertiary)';
+      var stateBadge = isGit
+        ? (isClean
+            ? '<span class="text-xs px-2 py-0.5 rounded-md" style="color: var(--pw-state-success); background-color: var(--pw-state-success-bg);">clean</span>'
+            : '<span class="text-xs px-2 py-0.5 rounded-md" style="color: var(--pw-state-warning); background-color: var(--pw-state-warning-bg);">dirty</span>')
+        : '<span class="text-xs px-2 py-0.5 rounded-md" style="color: var(--pw-text-tertiary); background-color: var(--pw-bg-hover);">not a git repo</span>';
+
+      var rowsHtml = '';
+      if (isGit) {
+        rowsHtml +=
+          '<div class="flex items-center justify-between gap-3 py-1.5" style="border-bottom: 1px solid var(--pw-border-subtle);">'
+          + '<span class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);">changed_files_count</span>'
+          + '<span class="text-xs text-right min-w-0 truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(String(changed)) + '</span>'
+          + '</div>';
+        rowsHtml +=
+          '<div class="flex items-center justify-between gap-3 py-1.5" style="border-bottom: 1px solid var(--pw-border-subtle);">'
+          + '<span class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);">modified_count</span>'
+          + '<span class="text-xs text-right min-w-0 truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(String(modified)) + '</span>'
+          + '</div>';
+        rowsHtml +=
+          '<div class="flex items-center justify-between gap-3 py-1.5" style="border-bottom: 1px solid var(--pw-border-subtle);">'
+          + '<span class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);">untracked_count</span>'
+          + '<span class="text-xs text-right min-w-0 truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(String(untracked)) + '</span>'
+          + '</div>';
+      } else if (data.error) {
+        rowsHtml +=
+          '<div class="py-2 text-xs" style="color: var(--pw-state-error); font-family: var(--pw-font-mono);">' + escapeHtml(String(data.error)) + '</div>';
+      }
+
+      var shortStatusBlock = '';
+      if (isGit && shortStatus) {
+        shortStatusBlock =
+          '<div class="mt-2 rounded-md p-2 text-xs leading-relaxed overflow-auto" style="background-color: #0d1117; color: var(--pw-text-secondary); font-family: var(--pw-font-mono); max-height: 200px;">'
+          + '<pre class="whitespace-pre-wrap break-all">' + escapeHtml(shortStatus) + '</pre>'
+          + '</div>';
+      }
+
+      panelEl.innerHTML =
+        '<div class="flex items-center justify-between px-4 py-3" style="border-bottom: 1px solid var(--pw-border);">'
+        + '<div class="flex items-center gap-2 min-w-0">'
+        + '<svg class="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="' + headColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/></svg>'
+        + '<h3 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(repo) + '</h3>'
+        + '</div>'
+        + '<div class="flex items-center gap-2 shrink-0">'
+        + stateBadge
+        + '<button id="repo-status-close" class="px-2 py-0.5 rounded text-xs" style="background-color: var(--pw-bg-hover); color: var(--pw-text-tertiary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);" data-zh="关闭" data-en="Close">关闭</button>'
+        + '</div>'
+        + '</div>'
+        + '<div class="px-4 py-2">' + rowsHtml + '</div>'
+        + shortStatusBlock;
+
+      var closeBtn = $('repo-status-close');
+      if (closeBtn) closeBtn.addEventListener('click', function () { hide(panelEl); });
+    }
+
+    // ---------- Render: Config ----------
+    function renderConfig(config) {
+      var rowsEl = $('config-rows');
+      var loadingEl = $('config-loading');
+      if (!rowsEl) return;
+
+      hide(loadingEl);
+      rowsEl.innerHTML = '';
+
+      if (!config) {
+        rowsEl.innerHTML =
+          '<div class="py-6 text-center">'
+          + '<p class="text-xs" style="color: var(--pw-text-tertiary);">未加载到配置摘要</p>'
+          + '</div>';
+        show(rowsEl);
+        return;
+      }
+
+      var profile = config.toolProfile != null ? String(config.toolProfile) : '—';
+      var testCount = config.allowedTestCommandsCount != null ? String(config.allowedTestCommandsCount) : '—';
+      var direct = config.enableDirectProfile;
+      var directHtml;
+      if (direct === true) {
+        directHtml = '<span style="color: var(--pw-state-success);">已启用</span>';
+      } else if (direct === false) {
+        directHtml = '<span style="color: var(--pw-text-tertiary);">未启用</span>';
+      } else {
+        directHtml = '<span style="color: var(--pw-text-tertiary);">—</span>';
+      }
+
+      var rows = [
+        { label: 'toolProfile', valueHtml: '<span style="color: var(--pw-state-warning);">' + escapeHtml(profile) + '</span>' },
+        { label: 'allowedTestCommandsCount', valueHtml: '<span style="color: var(--pw-text-primary);">' + escapeHtml(testCount) + '</span>' },
+        { label: 'enableDirectProfile', valueHtml: directHtml }
+      ];
+
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var last = i === rows.length - 1;
+        var borderStyle = last ? '' : ' style="border-bottom: 1px solid var(--pw-border-subtle);"';
+        html +=
+          '<div class="flex items-center justify-between gap-3 py-2"' + borderStyle + '>'
+          + '<span class="text-xs whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);">' + escapeHtml(r.label) + '</span>'
+          + '<span class="text-xs text-right min-w-0 truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + r.valueHtml + '</span>'
+          + '</div>';
+      }
+      rowsEl.innerHTML = html;
+      show(rowsEl);
+    }
+
+    // ---------- Render: Agents ----------
+    function renderAgents(agents) {
+      var countEl = $('agents-count');
+      var gridEl = $('agents-grid');
+      var loadingEl = $('agents-loading');
+      var emptyEl = $('agents-empty');
+      if (!gridEl) return;
+
+      hide(loadingEl);
+      hide(emptyEl);
+      gridEl.innerHTML = '';
+
+      var list = Array.isArray(agents) ? agents : [];
+      if (countEl) countEl.textContent = list.length + ' 个 Agent';
+
+      if (list.length === 0) {
+        show(emptyEl);
+        hide(gridEl);
+        return;
+      }
+
+      var html = '';
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i] || {};
+        var available = !!a.available;
+        var dotColor = available ? 'var(--pw-state-success)' : 'var(--pw-state-error)';
+        var badgeColor = available ? 'var(--pw-state-success)' : 'var(--pw-state-error)';
+        var badgeBg = available ? 'var(--pw-state-success-bg)' : 'var(--pw-state-error-bg)';
+        var badgeText = available ? '可用' : '不可用';
+        var reason = a.reason ? escapeHtml(a.reason) : '—';
+        var command = a.command ? escapeHtml(a.command) : '—';
+        var checkedAt = a.checked_at ? escapeHtml(fmtTime(a.checked_at)) : '—';
+
+        html +=
+          '<div class="rounded-lg p-4" style="background-color: var(--pw-bg); border: 1px solid var(--pw-border-subtle);">'
+          + '<div class="flex items-center justify-between mb-3">'
+          + '<div class="flex items-center gap-2 min-w-0">'
+          + '<span class="shrink-0 w-2 h-2 rounded-full" style="background-color: ' + dotColor + ';"></span>'
+          + '<h3 class="text-sm font-semibold truncate" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">' + escapeHtml(a.name || '—') + '</h3>'
+          + '</div>'
+          + '<span class="inline-flex items-center justify-center text-xs font-medium px-2 py-0.5 rounded-md whitespace-nowrap" style="color: ' + badgeColor + '; background-color: ' + badgeBg + ';">' + badgeText + '</span>'
+          + '</div>'
+          + '<div class="mb-3 px-3 py-2 rounded" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border-subtle);">'
+          + '<div class="flex items-center gap-2">'
+          + '<span class="text-xs shrink-0" style="color: var(--pw-text-tertiary);">command:</span>'
+          + '<code class="text-xs block truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);">' + command + '</code>'
+          + '</div>'
+          + '</div>'
+          + '<div class="flex items-start justify-between gap-3">'
+          + '<div class="min-w-0 flex-1">'
+          + '<div class="text-xs" style="color: var(--pw-text-tertiary);">reason</div>'
+          + '<div class="text-xs mt-0.5 break-words" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);" title="' + reason + '">' + reason + '</div>'
+          + '</div>'
+          + '<div class="shrink-0 text-right">'
+          + '<div class="text-xs" style="color: var(--pw-text-tertiary);">checked_at</div>'
+          + '<div class="text-xs mt-0.5" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);">' + checkedAt + '</div>'
+          + '</div>'
+          + '</div>'
+          + '</div>';
+      }
+      gridEl.innerHTML = html;
+      show(gridEl);
+    }
+
+    // ---------- Network ----------
+    function loadWorkspace() {
+      clearError();
+      setRefreshing(true);
+      fetch(API_URL, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            return res.text().then(function (body) {
+              throw new Error('HTTP ' + res.status + (body ? (': ' + body.slice(0, 200)) : ''));
+            });
+          }
+          return res.json();
+        })
+        .then(function (data) {
+          data = data || {};
+          renderWorkspaceRoot(data.workspace_root);
+          renderProjects(data.directories);
+          renderAgents(data.agents);
+          renderConfig(data.config);
+          setLastUpdated();
+        })
+        .catch(function (err) {
+          var msg = (err && err.message) ? err.message : '未知错误';
+          if (err && err.name === 'TypeError' && /fetch/i.test(msg)) {
+            msg = '无法连接到 ' + API_URL + '（请确认 PatchWarden 服务正在运行）';
+          }
+          showError(msg);
+        })
+        .finally(function () {
+          setRefreshing(false);
+        });
+    }
+
+    // ---------- Event wiring ----------
+    var refreshBtn = $('refreshBtn');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadWorkspace);
+
+    var retryBtn = $('retry-btn');
+    if (retryBtn) retryBtn.addEventListener('click', loadWorkspace);
+
+    // Initial load
+    loadWorkspace();
+  })();
+  </script>
+</body>
+</html>

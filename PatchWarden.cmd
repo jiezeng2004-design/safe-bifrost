@@ -20,7 +20,7 @@ set "HTTPS_PROXY=%PATCHWARDEN_PROXY_URL%"
 set "ALL_PROXY=%PATCHWARDEN_PROXY_URL%"
 set "NO_PROXY=localhost,127.0.0.1,::1"
 
-set "SCRIPTS_DIR=%~dp0scripts"
+set "SCRIPTS_DIR=%~dp0scripts\control"
 set "MANAGER=%SCRIPTS_DIR%\manage-patchwarden.ps1"
 
 if not exist "%MANAGER%" (

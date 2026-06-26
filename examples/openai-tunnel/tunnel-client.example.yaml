@@ -12,7 +12,7 @@
 #   --sample sample_mcp_stdio_local \
 #   --profile patchwarden \
 #   --tunnel-id tunnel_xxx \
-#   --mcp-command "C:/path/to/patchwarden/scripts/patchwarden-mcp-stdio.cmd"
+#   --mcp-command "C:/path/to/patchwarden/scripts/mcp/patchwarden-mcp-stdio.cmd"
 
 # Direct mode uses a separate profile and command:
 #
@@ -20,12 +20,12 @@
 #   --sample sample_mcp_stdio_local \
 #   --profile patchwarden-direct \
 #   --tunnel-id tunnel_xxx \
-#   --mcp-command "C:/path/to/patchwarden/scripts/patchwarden-mcp-direct.cmd"
+#   --mcp-command "C:/path/to/patchwarden/scripts/mcp/patchwarden-mcp-direct.cmd"
 
 mcp:
   commands:
     - channel: main
-      command: "C:/path/to/patchwarden/scripts/patchwarden-mcp-stdio.cmd"
+      command: "C:/path/to/patchwarden/scripts/mcp/patchwarden-mcp-stdio.cmd"
 
 # Mode B: HTTP
 #

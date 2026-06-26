@@ -19,7 +19,7 @@ if (process.platform !== "win32") {
   process.exit(0);
 }
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const temp = mkdtempSync(join(tmpdir(), "patchwarden-watcher-supervisor-"));
 const children = [];
 
@@ -87,13 +87,19 @@ async function runExternalScenario() {
 function createFixture(name) {
   const project = join(temp, name, "patchwarden-fixture");
   const scripts = join(project, "scripts");
+  const controlScripts = join(scripts, "control");
+  const mcpScripts = join(scripts, "mcp");
+  const checkScripts = join(scripts, "checks");
   const runner = join(project, "dist", "runner");
   const workspace = join(project, "workspace");
   mkdirSync(scripts, { recursive: true });
+  mkdirSync(controlScripts, { recursive: true });
+  mkdirSync(mcpScripts, { recursive: true });
+  mkdirSync(checkScripts, { recursive: true });
   mkdirSync(runner, { recursive: true });
   mkdirSync(workspace, { recursive: true });
-  cpSync(join(root, "scripts", "start-patchwarden-tunnel.ps1"), join(scripts, "start-patchwarden-tunnel.ps1"));
-  writeFileSync(join(scripts, "patchwarden-mcp-stdio.cmd"), "@echo off\r\nexit /b 0\r\n", "utf-8");
+  cpSync(join(root, "scripts", "control", "start-patchwarden-tunnel.ps1"), join(controlScripts, "start-patchwarden-tunnel.ps1"));
+  writeFileSync(join(mcpScripts, "patchwarden-mcp-stdio.cmd"), "@echo off\r\nexit /b 0\r\n", "utf-8");
   const manifestFixture = JSON.stringify({
     ok: true,
     server_version: "0.6.0",
@@ -103,7 +109,7 @@ function createFixture(name) {
     tool_names: [],
     tool_manifest_sha256: "a".repeat(64),
   });
-  writeFileSync(join(scripts, "mcp-manifest-check.js"), `process.stdout.write(${JSON.stringify(manifestFixture)});\n`, "utf-8");
+  writeFileSync(join(checkScripts, "mcp-manifest-check.js"), `process.stdout.write(${JSON.stringify(manifestFixture)});\n`, "utf-8");
   writeFileSync(join(project, "dist", "index.js"), "", "utf-8");
   const watcherAttemptPath = join(project, "watcher-attempt.txt");
   const watcherPath = join(runner, "watch.js");
@@ -140,7 +146,7 @@ function createFixture(name) {
 
 function runLauncher(fixture, mode, maxRestarts, lifetimeMs) {
   return spawnSync("powershell.exe", [
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(fixture.project, "scripts", "start-patchwarden-tunnel.ps1"),
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(fixture.project, "scripts", "control", "start-patchwarden-tunnel.ps1"),
     "-TunnelId", "tunnel_watcher_fixture",
     "-TunnelClientExe", fixture.mockCmd,
     "-ProxyUrl", "http://127.0.0.1:1",

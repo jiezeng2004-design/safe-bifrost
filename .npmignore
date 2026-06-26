@@ -15,5 +15,5 @@ safe-bifrost-release.zip
 safe-bifrost-release.tar.gz
 docs/optimization-proposal.md
 Kill-PatchWarden.cmd
-scripts/kill-patchwarden.ps1
+scripts/control/kill-patchwarden.ps1
 scripts/launchers/Kill-PatchWarden.cmd

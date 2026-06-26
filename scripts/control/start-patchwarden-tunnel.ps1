@@ -1,10 +1,10 @@
-param(
+﻿param(
   [string]$TunnelId = $env:PATCHWARDEN_TUNNEL_ID,
   [string]$Profile = "patchwarden",
   [ValidateSet("chatgpt_core", "chatgpt_direct")]
   [string]$ToolProfile = "chatgpt_core",
   [string]$ProxyUrl = $(if ($env:HTTPS_PROXY) { $env:HTTPS_PROXY } else { "http://127.0.0.1:7892" }),
-  [string]$TunnelClientExe = $env:TUNNEL_CLIENT_EXE,
+  [string]$TunnelClientExe = $(if ($env:TUNNEL_CLIENT_EXE) { $env:TUNNEL_CLIENT_EXE } else { $env:PATCHWARDEN_TUNNEL_CLIENT_EXE }),
   [string]$OpencodeBin = $env:OPENCODE_BIN_DIR,
   [string]$ConfigPath = $env:PATCHWARDEN_CONFIG,
   [string]$CredentialPath = $(if ($env:PATCHWARDEN_CREDENTIAL_PATH) { $env:PATCHWARDEN_CREDENTIAL_PATH } else { Join-Path $env:APPDATA "patchwarden\control-plane-api-key.dpapi" }),
@@ -16,6 +16,7 @@ param(
   [int]$WatcherHealthyResetSeconds = 60,
   [switch]$SkipWatcher,
   [switch]$ForgetSavedApiKey,
+  [switch]$NoTunnelWebUi,
   [string]$HealthListenAddr = ""
 )
 
@@ -29,12 +30,12 @@ if ([string]::IsNullOrWhiteSpace($HealthListenAddr)) {
   }
 }
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $ConfigPath) {
   $ConfigPath = Join-Path $ProjectRoot "patchwarden.config.json"
 }
 $McpLauncherName = if ($ToolProfile -eq "chatgpt_direct") { "patchwarden-mcp-direct.cmd" } else { "patchwarden-mcp-stdio.cmd" }
-$McpStdioLauncher = Join-Path $ProjectRoot "scripts\$McpLauncherName"
+$McpStdioLauncher = Join-Path $ProjectRoot "scripts\mcp\$McpLauncherName"
 $McpStdioLauncherForTunnel = $McpStdioLauncher -replace "\\", "/"
 $OpencodeConfigHome = Join-Path $env:LOCALAPPDATA "patchwarden\opencode-config"
 $ProfilePath = Join-Path $env:APPDATA "tunnel-client\$Profile.yaml"
@@ -57,6 +58,7 @@ $script:WatcherManaged = $false
 $script:WatcherRestartAttempts = 0
 $script:WatcherHealthySince = $null
 $script:WatcherRestartExhausted = $false
+$DefaultTunnelClientPath = "D:\ai_agent\tunnel-client-v0.0.9--context-conduit-topaz-windows-amd64\tunnel-client.exe"
 
 if ($ToolProfile -eq "chatgpt_direct") {
   $SkipWatcher = $true
@@ -501,7 +503,34 @@ if (-not $TunnelClientExe) {
   }
 }
 
+# Search common installation locations
+$commonPaths = @(
+  $DefaultTunnelClientPath
+  Join-Path $env:LOCALAPPDATA "patchwarden\tunnel-client.exe"
+  Join-Path $env:APPDATA "tunnel-client\tunnel-client.exe"
+  Join-Path $env:USERPROFILE "tunnel-client\tunnel-client.exe"
+)
 if (-not $TunnelClientExe) {
+  foreach ($candidate in $commonPaths) {
+    if (Test-Path -LiteralPath $candidate) {
+      $TunnelClientExe = $candidate
+      Write-Host "[detect] Found tunnel-client.exe: $TunnelClientExe" -ForegroundColor Green
+      break
+    }
+  }
+}
+
+if (-not $TunnelClientExe) {
+  Write-Host ""
+  Write-Host "[input] tunnel-client.exe not found on PATH or common locations." -ForegroundColor Yellow
+  Write-Host "        Please provide the full path."
+  Write-Host ""
+  Write-Host "        To search for it manually, try one of these commands:" -ForegroundColor Cyan
+  Write-Host "          Get-ChildItem -Path `$env:LOCALAPPDATA -Recurse -Filter tunnel-client.exe -ErrorAction SilentlyContinue" -ForegroundColor Gray
+  Write-Host "          Get-ChildItem -Path `$env:APPDATA -Recurse -Filter tunnel-client.exe -ErrorAction SilentlyContinue" -ForegroundColor Gray
+  Write-Host "          Get-ChildItem -Path C:\ -Recurse -Filter tunnel-client.exe -ErrorAction SilentlyContinue" -ForegroundColor Gray
+  Write-Host "        Or download it from: https://platform.openai.com/docs/guides/mcp-connector" -ForegroundColor Cyan
+  Write-Host ""
   $TunnelClientExe = Read-Host "Path to tunnel-client.exe"
 }
 
@@ -521,6 +550,19 @@ Assert-File -Path $TunnelClientExe -Name "tunnel-client.exe"
 Assert-File -Path $ConfigPath -Name "patchwarden.config.json"
 Assert-File -Path $McpStdioLauncher -Name $McpLauncherName
 
+# Auto-read Tunnel ID from existing profile YAML if not already set
+if (-not $TunnelId -and (Test-Path -LiteralPath $ProfilePath)) {
+  try {
+    $profileContent = Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8
+    if ($profileContent -match 'tunnel_id:\s*"([^"]+)"') {
+      $TunnelId = $matches[1]
+      Write-Host "[detect] Tunnel ID read from profile $Profile`: $TunnelId" -ForegroundColor Green
+    }
+  } catch {
+    Write-Host "[warn] Could not read Tunnel ID from $ProfilePath`: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+}
+
 if (-not $TunnelId) {
   $TunnelId = Read-Host "Tunnel ID"
 }
@@ -538,7 +580,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "dist\index.js"))) {
 New-Item -ItemType Directory -Force -Path $RuntimeDirectory | Out-Null
 $env:PATCHWARDEN_CONFIG = $ConfigPath
 Write-Host "[manifest] Verifying the exact $ToolProfile stdio MCP tool catalog..."
-$manifestOutput = (& node (Join-Path $ProjectRoot "scripts\mcp-manifest-check.js") --profile $ToolProfile --json 2>&1 | Out-String).Trim()
+$manifestOutput = (& node (Join-Path $ProjectRoot "scripts\checks\mcp-manifest-check.js") --profile $ToolProfile --json 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) {
   Write-TunnelStatus -Status "stopped" -ReasonCode "tool_manifest_check_failed" -LastError "The tunnel MCP tool manifest preflight failed."
   throw "Tool manifest preflight failed: $manifestOutput"
@@ -630,7 +672,7 @@ Write-Host "[run-config] cwd: $ProjectRoot"
 Write-Host ""
 
 $attempt = 0
-$openUi = $true
+$openUi = -not $NoTunnelWebUi
 try {
   while ($true) {
     $attempt++

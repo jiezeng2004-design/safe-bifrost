@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $ConfigPath = Join-Path $ProjectRoot "patchwarden.config.json"
 $RuntimeDirectory = Join-Path $env:LOCALAPPDATA "patchwarden\runtime"
 

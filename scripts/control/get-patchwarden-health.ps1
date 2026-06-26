@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $ConfigPath = Join-Path $ProjectRoot "patchwarden.config.json"
 $RuntimeDirectory = Join-Path $env:LOCALAPPDATA "patchwarden\runtime"
 $HealthUrlFile = Join-Path $RuntimeDirectory "tunnel-health-url.txt"
@@ -15,7 +15,7 @@ $packageVersion = [string](Get-Content -LiteralPath (Join-Path $ProjectRoot "pac
 
 $configuredTunnelManifest = $null
 try {
-  $manifestJson = node (Join-Path $ProjectRoot "scripts\mcp-manifest-check.js") 2>$null
+  $manifestJson = node (Join-Path $ProjectRoot "scripts\checks\mcp-manifest-check.js") 2>$null
   if ($LASTEXITCODE -eq 0 -and $manifestJson) {
     $configuredTunnelManifest = $manifestJson | ConvertFrom-Json
   }
@@ -70,7 +70,7 @@ if (Test-Path -LiteralPath $HealthUrlFile) {
 
 $tunnelProcesses = @($safeProcesses | Where-Object { $_.name -eq "tunnel-client.exe" })
 $mcpChildProcesses = @($safeProcesses | Where-Object {
-  $_.command_line -match '(?i)patchwarden-mcp-stdio\.cmd|patchwarden\\dist\\index\.js|patchwarden/scripts/\.\./dist/index\.js'
+  $_.command_line -match '(?i)patchwarden-mcp-stdio\.cmd|patchwarden\\dist\\index\.js|patchwarden/scripts/mcp/../../dist/index.js'
 })
 $deploymentConsistent = [bool](
   $configuredTunnelManifest -and

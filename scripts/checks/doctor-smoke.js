@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const tempRoot = mkdtempSync(join(tmpdir(), "patchwarden-doctor-"));
 const workspaceRoot = join(tempRoot, "workspace");
 const configPath = join(tempRoot, "patchwarden.config.json");
