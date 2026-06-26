@@ -148,18 +148,18 @@ try {
   );
   process.env.PATCHWARDEN_CONFIG = configPath;
 
-  const { savePlan } = await import("../dist/tools/savePlan.js");
-  const { createTask } = await import("../dist/tools/createTask.js");
-  const { getTaskStatus } = await import("../dist/tools/getTaskStatus.js");
-  const { cancelTask } = await import("../dist/tools/cancelTask.js");
-  const { killTask } = await import("../dist/tools/killTask.js");
-  const { getDiff } = await import("../dist/tools/taskOutputs.js");
-  const { listAgents } = await import("../dist/tools/listAgents.js");
-  const { getTaskSummary } = await import("../dist/tools/getTaskSummary.js");
-  const { auditTask } = await import("../dist/tools/auditTask.js");
-  const { waitForTask } = await import("../dist/tools/waitForTask.js");
-  const { runTask } = await import("../dist/runner/runTask.js");
-  const { reloadConfig } = await import("../dist/config.js");
+  const { savePlan } = await import("../../dist/tools/savePlan.js");
+  const { createTask } = await import("../../dist/tools/createTask.js");
+  const { getTaskStatus } = await import("../../dist/tools/getTaskStatus.js");
+  const { cancelTask } = await import("../../dist/tools/cancelTask.js");
+  const { killTask } = await import("../../dist/tools/killTask.js");
+  const { getDiff } = await import("../../dist/tools/taskOutputs.js");
+  const { listAgents } = await import("../../dist/tools/listAgents.js");
+  const { getTaskSummary } = await import("../../dist/tools/getTaskSummary.js");
+  const { auditTask } = await import("../../dist/tools/auditTask.js");
+  const { waitForTask } = await import("../../dist/tools/waitForTask.js");
+  const { runTask } = await import("../../dist/runner/runTask.js");
+  const { reloadConfig } = await import("../../dist/config.js");
 
   await test("list_agents reports configured executables", async () => {
     const result = listAgents();

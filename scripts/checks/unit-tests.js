@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
-const root = resolve(scriptDir, "..");
+const root = resolve(scriptDir, "..", "..");
 const unitDir = resolve(root, "dist", "test", "unit");
 
 if (!existsSync(unitDir)) {

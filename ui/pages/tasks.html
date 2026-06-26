@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-zh="任务面板" data-en="Tasks">任务面板</title>
+    <style id="theme-vars">
+/* PatchWarden Brand CSS — Dark Security Theme */
+/* Prefix: pw */
+
+:root {
+  /* ── Primary Palette ── */
+  --pw-bg: #0a0e14;
+  --pw-bg-elevated: #111820;
+  --pw-bg-surface: #161d27;
+  --pw-bg-hover: #1c2533;
+  --pw-bg-active: #222d3d;
+  --pw-border: #1e2a3a;
+  --pw-border-subtle: #172030;
+  --pw-border-focus: #2dd4a8;
+
+  /* ── Text ── */
+  --pw-text-primary: #e8edf4;
+  --pw-text-secondary: #8b99ad;
+  --pw-text-tertiary: #5a6a80;
+  --pw-text-inverse: #0a0e14;
+  --pw-text-accent: #2dd4a8;
+
+  /* ── Brand Accent — Security Green ── */
+  --pw-accent: #2dd4a8;
+  --pw-accent-hover: #34eabc;
+  --pw-accent-muted: rgba(45, 212, 168, 0.12);
+  --pw-accent-subtle: rgba(45, 212, 168, 0.06);
+
+  /* ── State Colors ── */
+  --pw-state-success: #22c55e;
+  --pw-state-success-bg: rgba(34, 197, 94, 0.1);
+  --pw-state-warning: #f59e0b;
+  --pw-state-warning-bg: rgba(245, 158, 11, 0.1);
+  --pw-state-error: #ef4444;
+  --pw-state-error-bg: rgba(239, 68, 68, 0.1);
+  --pw-state-info: #3b82f6;
+  --pw-state-info-bg: rgba(59, 130, 246, 0.1);
+
+  /* ── Radius ── */
+  --pw-radius-sm: 4px;
+  --pw-radius-md: 8px;
+  --pw-radius-lg: 12px;
+  --pw-radius-full: 9999px;
+
+  /* ── Shadows — static surfaces use border only; floating layers use subtle shadow ── */
+  --pw-shadow-float: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --pw-shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* ── Typography ── */
+  --pw-font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --pw-font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+
+  --pw-text-xs: 0.75rem;
+  --pw-text-sm: 0.8125rem;
+  --pw-text-base: 0.875rem;
+  --pw-text-lg: 1rem;
+  --pw-text-xl: 1.25rem;
+  --pw-text-2xl: 1.5rem;
+  --pw-text-3xl: 2rem;
+
+  --pw-leading-tight: 1.25;
+  --pw-leading-normal: 1.5;
+  --pw-leading-relaxed: 1.625;
+
+  --pw-weight-normal: 400;
+  --pw-weight-medium: 500;
+  --pw-weight-semibold: 600;
+  --pw-weight-bold: 700;
+
+  /* ── Spacing ── */
+  --pw-space-1: 4px;
+  --pw-space-2: 8px;
+  --pw-space-3: 12px;
+  --pw-space-4: 16px;
+  --pw-space-5: 20px;
+  --pw-space-6: 24px;
+  --pw-space-8: 32px;
+  --pw-space-10: 40px;
+  --pw-space-12: 48px;
+
+  /* ── Transitions ── */
+  --pw-transition-fast: 150ms ease;
+  --pw-transition-base: 200ms ease;
+  --pw-transition-slow: 300ms ease;
+}
+
+html.dark {
+  --pw-bg: #0a0e14;
+  --pw-bg-elevated: #111820;
+  --pw-bg-surface: #161d27;
+  --pw-bg-hover: #1c2533;
+  --pw-bg-active: #222d3d;
+  --pw-border: #1e2a3a;
+  --pw-border-subtle: #172030;
+  --pw-text-primary: #e8edf4;
+  --pw-text-secondary: #8b99ad;
+  --pw-text-tertiary: #5a6a80;
+}
+
+    </style>
+    <script src="/vendor/tailwindcss-browser.js"></script>
+    <script src="/vendor/lucide.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-accent: var(--pw-accent);
+    --color-border: var(--pw-border);
+  }
+  @layer base {
+    body { background: var(--pw-background); color: var(--pw-text-primary); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+      .pw-spin {
+        animation: pw-spin 0.9s linear infinite;
+      }
+      @keyframes pw-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="flex flex-col w-60 shrink-0 h-screen" style="background-color: var(--pw-bg); border-right: 1px solid var(--pw-border);">
+
+    <!-- Logo Area -->
+    <div class="flex items-center gap-3 px-5 py-5" style="border-bottom: 1px solid var(--pw-border-subtle);">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+      <span class="truncate text-lg font-semibold tracking-tight" style="color: var(--pw-text-primary); font-family: var(--pw-font-mono);">PatchWarden</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 flex flex-col gap-1 px-3 pt-4 overflow-y-auto">
+
+      <a href="/pages/dashboard.html" data-nav-key="dashboard" data-dom-id="nav-dashboard" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span class="truncate" data-zh="控制台" data-en="Dashboard">控制台</span>
+      </a>
+
+      <a href="/pages/tasks.html" data-nav-key="tasks" data-active="true" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span class="truncate" data-zh="任务面板" data-en="Tasks">任务面板</span>
+      </a>
+
+      <a href="/pages/workspace.html" data-nav-key="workspace" data-dom-id="nav-workspace" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>
+        </svg>
+        <span class="truncate" data-zh="工作区" data-en="Workspace">工作区</span>
+      </a>
+
+      <a href="/pages/audit.html" data-nav-key="audit" data-dom-id="nav-audit" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <span class="truncate" data-zh="审计日志" data-en="Audit Log">审计日志</span>
+      </a>
+
+      <a href="/pages/direct-sessions.html" data-nav-key="direct-sessions" data-dom-id="nav-direct-sessions" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+          <line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+        <span class="truncate" data-zh="Direct 会话" data-en="Direct Sessions">Direct 会话</span>
+      </a>
+
+      <a href="/pages/logs.html" data-nav-key="logs" data-dom-id="nav-logs" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors truncate" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span class="truncate" data-zh="日志" data-en="Logs">日志</span>
+      </a>
+
+    </nav>
+
+    <!-- Bottom Section -->
+    <div class="px-5 py-4" style="border-top: 1px solid var(--pw-border-subtle);">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-xs font-medium px-2 py-0.5 rounded-md whitespace-nowrap" style="color: var(--pw-text-tertiary); background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-mono);">Core v0.6.0</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="shrink-0 w-2 h-2 rounded-full" style="background-color: var(--pw-state-success);"></span>
+        <span class="text-xs truncate" style="color: var(--pw-text-tertiary);">Connected</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ========== MAIN AREA ========== -->
+  <div class="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
+
+    <!-- Top Bar -->
+    <header class="flex items-center justify-between shrink-0 px-6 py-3" style="border-bottom: 1px solid var(--pw-border); background-color: var(--pw-bg);">
+      <h1 class="text-lg font-semibold truncate min-w-0" style="color: var(--pw-text-primary); font-family: var(--pw-font-sans); text-wrap: balance; word-break: keep-all; overflow-wrap: break-word;" data-zh="任务面板" data-en="Tasks">
+        任务面板
+      </h1>
+      <div class="flex items-center gap-4 shrink-0">
+        <div id="watcherStatus" class="flex items-center gap-1.5 text-xs" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);">
+          <span class="shrink-0 w-1.5 h-1.5 rounded-full" style="background-color: var(--pw-text-tertiary);"></span>
+          <span>Watcher: --</span>
+        </div>
+        <div class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold" style="background-color: var(--pw-accent-muted); color: var(--pw-accent); font-family: var(--pw-font-mono);">
+          PW
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Content Area -->
+    <main class="flex-1 overflow-y-auto p-6" style="background-color: var(--pw-bg-elevated);">
+
+      <!-- ===== Filter Bar ===== -->
+      <div class="flex flex-wrap items-center gap-3 mb-5">
+        <!-- Status Filter Dropdown -->
+        <div class="relative">
+          <select id="statusFilter" class="appearance-none pl-3 pr-8 py-1.5 rounded-lg text-xs font-medium outline-none cursor-pointer transition-colors" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border-subtle); color: var(--pw-text-secondary); font-family: var(--pw-font-sans);">
+            <option value="" data-zh="全部状态" data-en="All Status">全部状态</option>
+            <option value="pending">Pending</option>
+            <option value="running">Running</option>
+            <option value="done">Done</option>
+            <option value="failed">Failed</option>
+          </select>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+
+        <!-- Refresh Button -->
+        <button id="refreshBtn" class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors" style="background-color: var(--pw-bg-surface); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);">
+          <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span data-zh="刷新" data-en="Refresh">刷新</span>
+        </button>
+
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+
+        <!-- Count Summary -->
+        <div id="countSummary" class="text-xs" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);">--</div>
+      </div>
+
+      <!-- ===== Task Table (border-led card) ===== -->
+      <div class="rounded-lg overflow-hidden" style="background-color: var(--pw-bg-surface); border: 1px solid var(--pw-border); border-left: 3px solid var(--pw-accent);">
+
+        <!-- Loading State -->
+        <div id="loadingState" class="py-16 text-center">
+          <svg class="pw-spin inline-block mb-3" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="2" x2="12" y2="6"/>
+            <line x1="12" y1="18" x2="12" y2="22"/>
+            <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+            <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+            <line x1="2" y1="12" x2="6" y2="12"/>
+            <line x1="18" y1="12" x2="22" y2="12"/>
+            <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
+            <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+          </svg>
+          <p class="text-sm" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="加载中..." data-en="Loading...">加载中...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden py-16 text-center">
+          <svg class="inline-block mb-3" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-state-error)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p class="text-sm font-medium" style="color: var(--pw-state-error); font-family: var(--pw-font-sans);" data-zh="加载失败" data-en="Load Failed">加载失败</p>
+          <p id="errorMessage" class="text-xs mt-2 px-6 break-words" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-mono);"></p>
+          <button id="retryBtn" class="mt-4 px-4 py-1.5 rounded-md text-xs font-medium transition-colors" style="background-color: var(--pw-bg-hover); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);" data-zh="重试" data-en="Retry">重试</button>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden py-16 text-center">
+          <svg class="inline-block mb-3" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pw-text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="13" x2="15" y2="13"/>
+          </svg>
+          <p class="text-sm" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="暂无任务" data-en="No Tasks">暂无任务</p>
+        </div>
+
+        <!-- Table -->
+        <div id="tableWrapper" class="hidden overflow-x-auto">
+          <table class="w-full text-left" style="min-width: 960px;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--pw-border);">
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="任务ID" data-en="Task ID">任务ID</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="标题" data-en="Title">标题</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);">Agent</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="状态" data-en="Status">状态</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="阶段" data-en="Phase">阶段</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="创建时间" data-en="Created">创建时间</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="待因" data-en="Pending Reason">待因</th>
+                <th class="px-4 py-3 text-xs font-semibold whitespace-nowrap text-right" style="color: var(--pw-text-tertiary); font-family: var(--pw-font-sans);" data-zh="操作" data-en="Actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="taskTableBody">
+              <!-- Rendered by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Active nav item styling + sidebar hover states -->
+  <style>
+    [data-nav-key] {
+      transition: background-color var(--pw-transition-fast), color var(--pw-transition-fast);
+    }
+    [data-nav-key]:hover {
+      background-color: var(--pw-bg-hover);
+      color: var(--pw-text-primary);
+    }
+    [data-nav-key][data-active="true"] {
+      background-color: var(--pw-accent-subtle);
+      color: var(--pw-accent);
+      border-left: 3px solid var(--pw-accent);
+      padding-left: 9px;
+    }
+    input[type="text"]:focus,
+    select:focus {
+      border-color: var(--pw-border-focus);
+      background-color: var(--pw-bg-hover);
+    }
+    input[type="text"]::placeholder {
+      color: var(--pw-text-tertiary);
+    }
+    /* Table row hover */
+    tbody tr:hover {
+      background-color: var(--pw-bg-active) !important;
+    }
+    /* Pulsing blue glow for running status */
+    .pw-pulse-badge {
+      animation: pw-pulse-glow 2s ease-in-out infinite;
+    }
+    @keyframes pw-pulse-glow {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.35);
+      }
+      50% {
+        box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.18);
+      }
+    }
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .pw-pulse-badge {
+        animation-duration: 0.01ms;
+      }
+      .pw-spin {
+        animation-duration: 1.5s;
+      }
+    }
+    /* Button hover states */
+    button:hover {
+      filter: brightness(1.1);
+    }
+    button:active {
+      filter: brightness(0.95);
+      transform: scale(0.98);
+    }
+    button:focus-visible {
+      outline: 2px solid var(--pw-border-focus);
+      outline-offset: 1px;
+    }
+    /* Refresh button hover */
+    #refreshBtn:hover {
+      background-color: var(--pw-bg-hover) !important;
+      color: var(--pw-text-primary) !important;
+      border-color: var(--pw-border-focus) !important;
+    }
+    /* Retry button hover */
+    #retryBtn:hover {
+      background-color: var(--pw-bg-active) !important;
+      color: var(--pw-text-primary) !important;
+    }
+  </style>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var API_URL = '/api/tasks';
+
+      // status -> { label, color, text }
+      // color: success (green) | info (blue) | warning (yellow) | error (red) | muted (gray)
+      var STATUS_META = {
+        pending:                 { color: 'warning', text: '等待中' },
+        running:                 { color: 'info',    text: '运行中' },
+        done:                    { color: 'success', text: '已完成' },
+        failed:                  { color: 'error',   text: '失败' },
+        failed_scope_violation:  { color: 'error',   text: '范围违规' },
+        canceled:                { color: 'muted',   text: '已取消' },
+        timeout:                 { color: 'muted',   text: '超时' }
+      };
+
+      var PHASE_LABELS = {
+        queued:                '排队中',
+        preparing:             '准备中',
+        running:               '运行中',
+        verifying:             '验证中',
+        collecting_artifacts:  '收集产物',
+        completed:             '已完成'
+      };
+
+      var allTasks = [];
+      var currentFilter = '';
+
+      // ---- DOM helpers ----
+      function $(id) { return document.getElementById(id); }
+      function show(el) { el && el.classList.remove('hidden'); }
+      function hide(el) { el && el.classList.add('hidden'); }
+
+      function escapeHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      function escapeAttr(s) { return escapeHtml(s); }
+
+      function truncate(s, n) {
+        if (!s) return '';
+        s = String(s);
+        return s.length > n ? s.slice(0, n) + '…' : s;
+      }
+
+      function pad2(n) { return String(n).padStart(2, '0'); }
+
+      function formatTime(iso) {
+        if (!iso) return '—';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return String(iso);
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+             + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+      }
+
+      function getStatusMeta(status) {
+        return STATUS_META[status] || { color: 'muted', text: status || '—' };
+      }
+
+      function getPhaseLabel(phase) {
+        return PHASE_LABELS[phase] || phase || '—';
+      }
+
+      // ---- State rendering ----
+      function showLoading() {
+        show($('loadingState'));
+        hide($('errorState'));
+        hide($('emptyState'));
+        hide($('tableWrapper'));
+        $('countSummary').textContent = '--';
+      }
+
+      function showError(msg) {
+        hide($('loadingState'));
+        show($('errorState'));
+        hide($('emptyState'));
+        hide($('tableWrapper'));
+        $('errorMessage').textContent = msg || '未知错误';
+        $('countSummary').textContent = '--';
+      }
+
+      function showEmpty() {
+        hide($('loadingState'));
+        hide($('errorState'));
+        show($('emptyState'));
+        hide($('tableWrapper'));
+      }
+
+      function showTable() {
+        hide($('loadingState'));
+        hide($('errorState'));
+        hide($('emptyState'));
+        show($('tableWrapper'));
+      }
+
+      // ---- Badge styling ----
+      function badgeStyle(color) {
+        switch (color) {
+          case 'success': return 'background-color: var(--pw-state-success-bg); color: var(--pw-state-success);';
+          case 'info':    return 'background-color: var(--pw-state-info-bg); color: var(--pw-state-info);';
+          case 'warning': return 'background-color: var(--pw-state-warning-bg); color: var(--pw-state-warning);';
+          case 'error':   return 'background-color: var(--pw-state-error-bg); color: var(--pw-state-error);';
+          default:        return 'background-color: var(--pw-bg-hover); color: var(--pw-text-secondary);';
+        }
+      }
+
+      function agentBadgeStyle(agent) {
+        // opencode -> purple tint (matches original design), others -> blue tint
+        if (agent === 'opencode') {
+          return 'background-color: rgba(168, 85, 247, 0.12); color: #a855f7;';
+        }
+        return 'background-color: var(--pw-state-info-bg); color: var(--pw-state-info);';
+      }
+
+      // ---- Row rendering ----
+      function renderRow(task, idx) {
+        var meta = getStatusMeta(task.status);
+        var style = badgeStyle(meta.color);
+        var pulseClass = (task.status === 'running') ? ' pw-pulse-badge' : '';
+        var truncatedId = truncate(task.task_id, 12);
+        var createdAt = formatTime(task.created_at);
+        var phaseLabel = getPhaseLabel(task.phase);
+        var altBg = (idx % 2 === 1) ? ' background-color: var(--pw-bg-hover);' : '';
+
+        var pendingCell;
+        if (task.pending_reason) {
+          pendingCell = '<span class="inline-block truncate" style="max-width: 180px; color: var(--pw-state-warning); font-family: var(--pw-font-sans);" title="'
+                      + escapeAttr(task.pending_reason) + '">'
+                      + escapeHtml(truncate(task.pending_reason, 28))
+                      + '</span>';
+        } else {
+          pendingCell = '<span style="color: var(--pw-text-tertiary);">—</span>';
+        }
+
+        var detailHref = '/pages/task-detail.html?id=' + encodeURIComponent(task.task_id || '');
+
+        return ''
+          + '<tr class="transition-colors" style="border-bottom: 1px solid var(--pw-border-subtle);' + altBg + '">'
+          +   '<td class="px-4 py-3 text-xs whitespace-nowrap" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);" title="' + escapeAttr(task.task_id || '') + '">' + escapeHtml(truncatedId) + '</td>'
+          +   '<td class="px-4 py-3 text-sm" style="color: var(--pw-text-primary); font-family: var(--pw-font-sans); max-width: 320px;">' + escapeHtml(task.title || '—') + '</td>'
+          +   '<td class="px-4 py-3">'
+          +     '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap" style="' + agentBadgeStyle(task.agent) + ' font-family: var(--pw-font-mono);">' + escapeHtml(task.agent || '—') + '</span>'
+          +   '</td>'
+          +   '<td class="px-4 py-3">'
+          +     '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap' + pulseClass + '" style="' + style + ' font-family: var(--pw-font-sans);" data-status="' + escapeAttr(task.status || '') + '">'
+          +       '<span class="shrink-0 w-1.5 h-1.5 rounded-full" style="background-color: currentColor;"></span>'
+          +       escapeHtml(meta.text)
+          +     '</span>'
+          +   '</td>'
+          +   '<td class="px-4 py-3 text-xs whitespace-nowrap" style="color: var(--pw-text-secondary); font-family: var(--pw-font-sans);" data-phase="' + escapeAttr(task.phase || '') + '">' + escapeHtml(phaseLabel) + '</td>'
+          +   '<td class="px-4 py-3 text-xs whitespace-nowrap" style="color: var(--pw-text-secondary); font-family: var(--pw-font-mono);" title="' + escapeAttr(task.created_at || '') + '">' + escapeHtml(createdAt) + '</td>'
+          +   '<td class="px-4 py-3 text-xs" style="font-family: var(--pw-font-sans);">' + pendingCell + '</td>'
+          +   '<td class="px-4 py-3 text-right">'
+          +     '<a href="' + detailHref + '" class="inline-block px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors" style="background-color: var(--pw-bg-hover); color: var(--pw-text-secondary); border: 1px solid var(--pw-border-subtle); font-family: var(--pw-font-sans);" data-zh="查看详情" data-en="View Details">查看详情</a>'
+          +   '</td>'
+          + '</tr>';
+      }
+
+      function renderTasks() {
+        var filtered = currentFilter
+          ? allTasks.filter(function (t) { return t && t.status === currentFilter; })
+          : allTasks.slice();
+
+        // Sort by created_at desc (newest first). Falls back gracefully if missing.
+        filtered.sort(function (a, b) {
+          var ta = a && a.created_at ? Date.parse(a.created_at) : 0;
+          var tb = b && b.created_at ? Date.parse(b.created_at) : 0;
+          if (isNaN(ta)) ta = 0;
+          if (isNaN(tb)) tb = 0;
+          return tb - ta;
+        });
+
+        if (filtered.length === 0) {
+          showEmpty();
+        } else {
+          var html = '';
+          for (var i = 0; i < filtered.length; i++) {
+            html += renderRow(filtered[i], i);
+          }
+          $('taskTableBody').innerHTML = html;
+          showTable();
+        }
+
+        // Count summary
+        if (currentFilter) {
+          $('countSummary').textContent = '显示 ' + filtered.length + ' / ' + allTasks.length + ' 条';
+        } else {
+          $('countSummary').textContent = '共 ' + allTasks.length + ' 条';
+        }
+      }
+
+      function renderWatcher(watcher) {
+        var el = $('watcherStatus');
+        if (!watcher) {
+          el.innerHTML = '<span class="shrink-0 w-1.5 h-1.5 rounded-full" style="background-color: var(--pw-text-tertiary);"></span><span>Watcher: --</span>';
+          return;
+        }
+        var status = watcher.status || 'unknown';
+        var dotColor;
+        if (status === 'healthy') {
+          dotColor = 'var(--pw-state-success)';
+        } else if (status === 'unhealthy' || status === 'error') {
+          dotColor = 'var(--pw-state-error)';
+        } else {
+          dotColor = 'var(--pw-state-warning)';
+        }
+        el.innerHTML = '<span class="shrink-0 w-1.5 h-1.5 rounded-full" style="background-color: ' + dotColor + ';"></span><span>Watcher: ' + escapeHtml(status) + '</span>';
+      }
+
+      // ---- API call ----
+      function setRefreshing(isRefreshing) {
+        var icon = $('refreshIcon');
+        if (!icon) return;
+        if (isRefreshing) {
+          icon.classList.add('pw-spin');
+        } else {
+          icon.classList.remove('pw-spin');
+        }
+      }
+
+      function fetchTasks() {
+        showLoading();
+        setRefreshing(true);
+        fetch(API_URL, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          cache: 'no-store'
+        })
+          .then(function (res) {
+            if (!res.ok) {
+              return res.text().then(function (body) {
+                throw new Error('HTTP ' + res.status + (body ? (': ' + body.slice(0, 200)) : ''));
+              });
+            }
+            return res.json();
+          })
+          .then(function (data) {
+            allTasks = (data && Array.isArray(data.tasks)) ? data.tasks : [];
+            renderWatcher(data && data.watcher);
+            renderTasks();
+          })
+          .catch(function (err) {
+            var msg = (err && err.message) ? err.message : '未知错误';
+            // Mask fetch network errors that expose no useful detail
+            if (err && err.name === 'TypeError' && /fetch/i.test(msg)) {
+              msg = '无法连接到 ' + API_URL + '（请确认 PatchWarden 服务正在运行）';
+            }
+            showError(msg);
+          })
+          .finally(function () {
+            setRefreshing(false);
+          });
+      }
+
+      // ---- Event wiring ----
+      $('statusFilter').addEventListener('change', function (e) {
+        currentFilter = e.target.value;
+        renderTasks();
+      });
+
+      $('refreshBtn').addEventListener('click', fetchTasks);
+
+      var retryBtn = $('retryBtn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', fetchTasks);
+      }
+
+      // Initial load
+      fetchTasks();
+    })();
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

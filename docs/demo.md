@@ -42,7 +42,10 @@ Expected artifacts under the configured workspace:
 ```text
 .patchwarden/tasks/<task_id>/status.json
 .patchwarden/tasks/<task_id>/result.md
+.patchwarden/tasks/<task_id>/result.json
+.patchwarden/tasks/<task_id>/artifact_manifest.json
 .patchwarden/tasks/<task_id>/git.diff
+.patchwarden/tasks/<task_id>/verify.json
 .patchwarden/tasks/<task_id>/test.log
 ```
 

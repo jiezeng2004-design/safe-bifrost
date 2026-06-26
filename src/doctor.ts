@@ -235,8 +235,8 @@ check(
 const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf-8"));
 check("Server version matches package.json", packageJson.version === PATCHWARDEN_VERSION,
   `${PATCHWARDEN_VERSION} vs ${packageJson.version}`);
-check("Manifest preflight script exists", existsSync(resolve(process.cwd(), "scripts/mcp-manifest-check.js")),
-  "scripts/mcp-manifest-check.js");
+check("Manifest preflight script exists", existsSync(resolve(process.cwd(), "scripts/checks/mcp-manifest-check.js")),
+  "scripts/checks/mcp-manifest-check.js");
 
 const previousProfile = process.env.PATCHWARDEN_TOOL_PROFILE;
 try {
@@ -477,9 +477,9 @@ const tunnelFiles = [
   "examples/openai-tunnel/README.md",
   "examples/openai-tunnel/tunnel-client.example.yaml",
   "examples/openai-tunnel/chatgpt-test-prompt.md",
-  "scripts/patchwarden-mcp-direct.cmd",
+  "scripts/mcp/patchwarden-mcp-direct.cmd",
   "PatchWarden.cmd",
-  "scripts/manage-patchwarden.ps1",
+  "scripts/control/manage-patchwarden.ps1",
   "scripts/launchers/Start-PatchWarden-Direct-Tunnel.cmd",
 ];
 for (const tf of tunnelFiles) {

@@ -11,10 +11,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { CHATGPT_CORE_TOOL_NAMES } from "../dist/tools/toolCatalog.js";
+import { CHATGPT_CORE_TOOL_NAMES } from "../../dist/tools/toolCatalog.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
+const root = resolve(__dirname, "..", "..");
 const serverPath = resolve(root, "dist", "httpServer.js");
 
 const host = "127.0.0.1";

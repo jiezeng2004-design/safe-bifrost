@@ -1,5 +1,6 @@
 node_modules/
 .npm-cache/
+.playwright-cli/
 dist/
 .patchwarden/
 .safe-bifrost/
@@ -7,7 +8,7 @@ dist/
 *.log
 patchwarden.config.json
 safe-bifrost.config.json
-release/
+/release/
 patchwarden-release.zip
 patchwarden-release.tar.gz
 patchwarden-*.tgz
@@ -18,9 +19,14 @@ safe-bifrost-*.tgz
 .local/
 *.local.cmd
 *.local.ps1
+.tmp/
 /PatchWarden.cmd.bak
 /nul
+/result.md
 /docs/optimization-proposal.md
 /Kill-PatchWarden.cmd
-/scripts/kill-patchwarden.ps1
+/scripts/control/kill-patchwarden.ps1
 /scripts/launchers/Kill-PatchWarden.cmd
+/CODE_WIKI.md
+/PatchWarden-UI.zip
+/patchwarden-v0.6.1-SHA256SUMS.txt
