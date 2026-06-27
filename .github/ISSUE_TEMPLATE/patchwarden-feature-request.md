@@ -1,9 +1,8 @@
 ---
 name: PatchWarden Feature Request
 about: Suggest an idea or improvement for PatchWarden
-title: "[Feature]"
+title: "[Feature] "
 labels: enhancement
-assignees: jiezeng2004-design
 
 ---
 
