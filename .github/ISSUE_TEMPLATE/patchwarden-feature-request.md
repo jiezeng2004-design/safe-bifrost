@@ -1,0 +1,32 @@
+---
+name: PatchWarden Feature Request
+about: Suggest an idea or improvement for PatchWarden
+title: "[Feature]"
+labels: enhancement
+assignees: jiezeng2004-design
+
+---
+
+## Feature Description
+
+Please describe the feature or improvement you would like to see.
+
+## Problem or Use Case
+
+What problem does this feature solve?
+
+## Proposed Solution
+
+Describe how you think this feature should work.
+
+## Alternatives Considered
+
+Have you considered any other solutions, tools, or workarounds?
+
+## Expected Impact
+
+How would this improve PatchWarden?
+
+## Additional Context
+
+Add screenshots, examples, links, or references if available.
