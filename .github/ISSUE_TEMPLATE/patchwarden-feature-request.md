@@ -30,6 +30,10 @@ How would this affect workspace confinement, command allow-lists, credentials, a
 
 How would this improve PatchWarden?
 
+## Safety Impact
+
+Explain effects on workspace confinement, command allow-lists, credentials, and auditability.
+
 ## Additional Context
 
 Add screenshots, examples, links, or references if available.
