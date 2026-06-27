@@ -34,7 +34,7 @@ What actually happened?
 
 ## Logs or Screenshots
 
-Please paste relevant logs, error messages, or screenshots here.
+Paste only redacted logs/error output (remove API keys, tokens, cookies, `.env` contents, and other secrets). For security vulnerabilities, use https://github.com/jiezeng2004-design/PatchWarden/security/advisories/new.
 
 ## Additional Context
 
