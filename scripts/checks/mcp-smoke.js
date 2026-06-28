@@ -103,12 +103,21 @@ try {
   const tools = await client.listTools();
   const names = tools.tools.map((tool) => tool.name).sort();
   const expected = [
+    "accept_subgoal",
     "apply_patch",
     "audit_session",
     "audit_task",
     "cancel_task",
+    "check_release_gate",
     "create_direct_session",
+    "create_goal",
+    "create_subgoal_task",
     "create_task",
+    "diagnose_task",
+    "discard_worktree",
+    "discover_tools",
+    "explain_tool",
+    "export_handoff",
     "finalize_direct_session",
     "get_diff",
     "get_plan",
@@ -121,16 +130,31 @@ try {
     "get_task_summary",
     "get_test_log",
     "health_check",
+    "invoke_discovered_tool",
     "kill_task",
     "list_agents",
+    "list_goals",
     "list_tasks",
     "list_workspace",
+    "merge_worktree",
+    "read_goal",
     "read_workspace_file",
+    "reconcile_tasks",
+    "reject_subgoal",
     "retry_task",
     "run_verification",
+    "safe_audit",
+    "safe_audit_direct_session",
+    "safe_diff_summary",
+    "safe_direct_summary",
+    "safe_finalize_direct_session",
+    "safe_result",
     "safe_status",
+    "safe_test_summary",
     "save_plan",
     "search_workspace",
+    "suggest_next_subgoal",
+    "summarize_goal_progress",
     "sync_file",
     "wait_for_task",
   ];
@@ -143,7 +167,7 @@ try {
   if (!tools._meta || typeof tools._meta.tool_manifest_sha256 !== "string" || tools._meta.tool_manifest_sha256.length !== 64) {
     throw new Error(`tools/list _meta missing manifest hash: ${JSON.stringify(tools._meta || null)}`);
   }
-  if (tools._meta.tool_profile !== "full" || tools._meta.tool_count !== 30) {
+  if (tools._meta.tool_profile !== "full" || tools._meta.tool_count !== 54) {
     throw new Error(`tools/list _meta profile/count mismatch: ${JSON.stringify(tools._meta)}`);
   }
   if (typeof tools._meta.schema_epoch !== "string" || typeof tools._meta.server_version !== "string") {
@@ -296,8 +320,8 @@ try {
 
   const statusPath = join(task.path, "status.json");
   const statusAfter = JSON.parse(readFileSync(statusPath, "utf-8"));
-  if (statusAfter.status !== "done") {
-    throw new Error(`runner status should be done, got ${statusAfter.status}`);
+  if (statusAfter.status !== "done" && statusAfter.status !== "done_by_agent") {
+    throw new Error(`runner status should be done or done_by_agent, got ${statusAfter.status}`);
   }
   for (const fileName of ["result.md", "result.json", "diff.patch", "git.diff", "file-stats.json", "test.log", "verify.json", "verify.log"]) {
     if (!existsSync(join(task.path, fileName))) {
@@ -393,7 +417,7 @@ try {
   await disabledClient.close();
   ok("chatgpt_direct disabled exposes only health_check with diagnostic");
 
-  // 2. chatgpt_direct enabled: 10 tools + minimal create_direct_session
+  // 2. chatgpt_direct enabled: 13 tools + minimal create_direct_session
   const enabledConfigPath = join(tempRoot, "direct-enabled.json");
   const directRepo = join(workspaceRoot, "direct-fixture");
   mkdirSync(join(directRepo, "src"), { recursive: true });
@@ -450,14 +474,17 @@ try {
     "list_workspace",
     "read_workspace_file",
     "run_verification",
+    "safe_audit_direct_session",
+    "safe_direct_summary",
+    "safe_finalize_direct_session",
     "search_workspace",
     "sync_file",
   ];
   if (JSON.stringify(enabledNames) !== JSON.stringify(expectedDirect)) {
     throw new Error(`chatgpt_direct enabled tools mismatch: ${enabledNames.join(", ")}`);
   }
-  if (enabledTools._meta.tool_count !== 10) {
-    throw new Error(`chatgpt_direct enabled tool_count should be 10, got ${enabledTools._meta.tool_count}`);
+  if (enabledTools._meta.tool_count !== 13) {
+    throw new Error(`chatgpt_direct enabled tool_count should be 13, got ${enabledTools._meta.tool_count}`);
   }
 
   // Minimal create_direct_session
@@ -477,12 +504,12 @@ try {
   if (enabledHealth.direct_profile_enabled !== true) {
     throw new Error(`direct_profile_enabled should be true, got ${enabledHealth.direct_profile_enabled}`);
   }
-  if (enabledHealth.direct_tool_count !== 10) {
-    throw new Error(`direct_tool_count should be 10, got ${enabledHealth.direct_tool_count}`);
+  if (enabledHealth.direct_tool_count !== 13) {
+    throw new Error(`direct_tool_count should be 13, got ${enabledHealth.direct_tool_count}`);
   }
 
   await enabledClient.close();
-  ok("chatgpt_direct enabled exposes 10 tools and create_direct_session works");
+  ok("chatgpt_direct enabled exposes 13 tools and create_direct_session works");
 } catch (error) {
   fail("MCP smoke test", error);
 } finally {

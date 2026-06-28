@@ -592,7 +592,7 @@ test("D8b. tool profiles are exact and schema changes alter the manifest hash", 
   try {
     process.env.PATCHWARDEN_TOOL_PROFILE = "full";
     const fullTools = getToolDefs();
-    if (fullTools.length !== 30) throw new Error(`Expected 30 full tools, got ${fullTools.length}`);
+    if (fullTools.length !== 54) throw new Error(`Expected 54 full tools, got ${fullTools.length}`);
 
     const coreTools = selectToolsForProfile(fullTools, "chatgpt_core", getConfig().enableDirectProfile);
     const names = coreTools.map((tool) => tool.name);
@@ -1926,10 +1926,10 @@ reloadConfig();
 
 let directSessionId = "";
 
-test("M1. chatgpt_core still has 17 tools", () => {
+test("M1. chatgpt_core still has 21 tools", () => {
   const tools = getToolDefs();
   const coreTools = selectToolsForProfile(tools, "chatgpt_core", true);
-  if (coreTools.length !== 17) throw new Error(`Expected 17, got ${coreTools.length}`);
+  if (coreTools.length !== 21) throw new Error(`Expected 21, got ${coreTools.length}`);
   if (JSON.stringify(coreTools.map((t) => t.name)) !== JSON.stringify(CHATGPT_CORE_TOOL_NAMES)) {
     throw new Error("Tool names mismatch");
   }
@@ -1942,10 +1942,10 @@ test("M2. chatgpt_direct disabled exposes only health_check", () => {
   if (disabledTools[0].name !== "health_check") throw new Error(`Expected health_check, got ${disabledTools[0].name}`);
 });
 
-test("M3. chatgpt_direct enabled has 10 tools", () => {
+test("M3. chatgpt_direct enabled has 13 tools", () => {
   const tools = getToolDefs();
   const directTools = selectToolsForProfile(tools, "chatgpt_direct", true);
-  if (directTools.length !== 10) throw new Error(`Expected 10, got ${directTools.length}`);
+  if (directTools.length !== 13) throw new Error(`Expected 13, got ${directTools.length}`);
   if (JSON.stringify(directTools.map((t) => t.name)) !== JSON.stringify(CHATGPT_DIRECT_TOOL_NAMES)) {
     throw new Error("Tool names mismatch");
   }

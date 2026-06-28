@@ -4,18 +4,20 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { CHATGPT_CORE_TOOL_NAMES, CHATGPT_DIRECT_TOOL_NAMES } from "../../dist/tools/toolCatalog.js";
+import { CHATGPT_CORE_TOOL_NAMES, CHATGPT_DIRECT_TOOL_NAMES, CHATGPT_SEARCH_TOOL_NAMES } from "../../dist/tools/toolCatalog.js";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const jsonOnly = process.argv.includes("--json");
 const profileIndex = process.argv.indexOf("--profile");
 const profile = profileIndex >= 0 ? process.argv[profileIndex + 1] : "chatgpt_core";
-if (profile !== "chatgpt_core" && profile !== "chatgpt_direct") {
+if (profile !== "chatgpt_core" && profile !== "chatgpt_direct" && profile !== "chatgpt_search") {
   throw new Error(`Unsupported manifest profile "${profile}".`);
 }
 const expectedTools = profile === "chatgpt_direct"
   ? [...CHATGPT_DIRECT_TOOL_NAMES]
-  : [...CHATGPT_CORE_TOOL_NAMES];
+  : profile === "chatgpt_search"
+    ? [...CHATGPT_SEARCH_TOOL_NAMES]
+    : [...CHATGPT_CORE_TOOL_NAMES];
 const defaultConfigPath = resolve(root, "patchwarden.config.json");
 const transportEnv = {
   ...process.env,
@@ -102,15 +104,48 @@ try {
     if (!summaryProperties.includes("view") || !summaryProperties.includes("max_items")) {
       throw new Error("get_task_summary schema must expose view and max_items");
     }
-  } else {
+    const safeRequirements = {
+      safe_result: ["task_id"],
+      safe_audit: ["task_id"],
+      safe_test_summary: ["task_id"],
+      safe_diff_summary: ["task_id"],
+    };
+    for (const [toolName, requiredProperties] of Object.entries(safeRequirements)) {
+      const tool = listed.tools.find((entry) => entry.name === toolName);
+      const properties = Object.keys(tool?.inputSchema?.properties || {});
+      for (const property of requiredProperties) {
+        if (!properties.includes(property)) {
+          throw new Error(`${toolName} schema is missing ${property}`);
+        }
+      }
+    }
+  } else if (profile === "chatgpt_direct") {
     const directRequirements = {
       create_direct_session: ["repo_path"],
       apply_patch: ["session_id", "path", "expected_sha256", "operations"],
       run_verification: ["session_id", "command"],
       finalize_direct_session: ["session_id"],
       audit_session: ["session_id"],
+      safe_direct_summary: ["session_id"],
+      safe_finalize_direct_session: ["session_id"],
+      safe_audit_direct_session: ["session_id"],
     };
     for (const [toolName, requiredProperties] of Object.entries(directRequirements)) {
+      const tool = listed.tools.find((entry) => entry.name === toolName);
+      const properties = Object.keys(tool?.inputSchema?.properties || {});
+      for (const property of requiredProperties) {
+        if (!properties.includes(property)) {
+          throw new Error(`${toolName} schema is missing ${property}`);
+        }
+      }
+    }
+  } else {
+    const searchRequirements = {
+      discover_tools: ["query"],
+      explain_tool: ["name"],
+      invoke_discovered_tool: ["toolName", "arguments", "discoveryToken"],
+    };
+    for (const [toolName, requiredProperties] of Object.entries(searchRequirements)) {
       const tool = listed.tools.find((entry) => entry.name === toolName);
       const properties = Object.keys(tool?.inputSchema?.properties || {});
       for (const property of requiredProperties) {
@@ -127,7 +162,8 @@ try {
     health.tool_profile !== profile ||
     health.tool_count !== expectedTools.length ||
     !health.tool_manifest_sha256 ||
-    (profile === "chatgpt_direct" && health.direct_profile_enabled !== true)
+    (profile === "chatgpt_direct" && health.direct_profile_enabled !== true) ||
+    (profile === "chatgpt_search" && health.search_tool_count !== expectedTools.length)
   ) {
     throw new Error(`health_check catalog mismatch: ${JSON.stringify(health)}`);
   }
@@ -164,12 +200,23 @@ try {
       health_check: ["detail"],
       list_tasks: ["repo_path", "active_only"],
       get_task_summary: ["view", "max_items"],
-    } : {
+      safe_result: ["task_id"],
+      safe_audit: ["task_id"],
+      safe_test_summary: ["task_id"],
+      safe_diff_summary: ["task_id"],
+    } : profile === "chatgpt_direct" ? {
       create_direct_session: ["repo_path"],
       apply_patch: ["session_id", "path", "expected_sha256", "operations"],
       run_verification: ["session_id", "command"],
       finalize_direct_session: ["session_id"],
       audit_session: ["session_id"],
+      safe_direct_summary: ["session_id"],
+      safe_finalize_direct_session: ["session_id"],
+      safe_audit_direct_session: ["session_id"],
+    } : {
+      discover_tools: ["query"],
+      explain_tool: ["name"],
+      invoke_discovered_tool: ["toolName", "arguments", "discoveryToken"],
     },
   };
   console.log(jsonOnly ? JSON.stringify(output) : JSON.stringify(output, null, 2));

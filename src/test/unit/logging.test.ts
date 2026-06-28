@@ -1,6 +1,16 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { strict as assert } from "node:assert";
-import { Logger, logUnhandledError, installGlobalHandlers } from "../../logging.js";
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  Logger,
+  logUnhandledError,
+  installGlobalHandlers,
+  computeArgumentsDigest,
+  logToolInvocation,
+  type InvocationLogEntry,
+} from "../../logging.js";
 
 // ── Test helpers ──────────────────────────────────────────────────
 
@@ -166,9 +176,10 @@ describe("Logger — verbose mode (PATCHWARDEN_VERBOSE_LOG)", () => {
     delete process.env.PATCHWARDEN_VERBOSE_LOG;
 
     const log = new Logger();
+    const fakeToken = "sk_" + "FAKE_TOKEN_VALUE_123456";
     const sensitiveArgs = {
       prompt: "fix the bug",
-      token: "ghp_" + "a".repeat(20),
+      token: fakeToken,
     };
 
     const entries = captureJson(() => {
@@ -182,16 +193,17 @@ describe("Logger — verbose mode (PATCHWARDEN_VERBOSE_LOG)", () => {
     assert.equal(entry.args, undefined);
     // The raw token must not appear anywhere in the serialized entry
     const raw = JSON.stringify(entry);
-    assert.ok(!raw.includes("ghp_"), "raw token must not leak into log output");
+    assert.ok(!raw.includes(fakeToken), "raw token must not leak into log output");
   });
 
   it("logs sanitized args when PATCHWARDEN_VERBOSE_LOG=true", () => {
     process.env.PATCHWARDEN_VERBOSE_LOG = "true";
 
     const log = new Logger();
+    const fakeToken = "sk_" + "FAKE_TOKEN_VALUE_123456";
     const sensitiveArgs = {
       prompt: "fix the bug",
-      token: "ghp_" + "a".repeat(20),
+      token: fakeToken,
     };
 
     const entries = captureJson(() => {
@@ -205,7 +217,7 @@ describe("Logger — verbose mode (PATCHWARDEN_VERBOSE_LOG)", () => {
     assert.ok(entry.args !== undefined, "args should be logged in verbose mode");
     const argsStr = String(entry.args);
     assert.ok(argsStr.includes("[REDACTED TOKEN]"), "sensitive token must be redacted");
-    assert.ok(!argsStr.includes("ghp_"), "raw token must not appear in args");
+    assert.ok(!argsStr.includes(fakeToken), "raw token must not appear in args");
     // non-sensitive content is preserved
     assert.ok(argsStr.includes("fix the bug"), "non-sensitive args content is preserved");
   });
@@ -321,5 +333,165 @@ describe("installGlobalHandlers", () => {
       for (const fn of origUnhandled) process.on("unhandledRejection", fn);
       for (const fn of origUncaught) process.on("uncaughtException", fn);
     }
+  });
+});
+
+// ── computeArgumentsDigest ───────────────────────────────────────
+
+describe("computeArgumentsDigest", () => {
+  it("returns the same digest for identical arguments (stability)", () => {
+    const args = { b: 2, a: 1, nested: { y: "yes", x: [1, 2] } };
+    const d1 = computeArgumentsDigest(args);
+    const d2 = computeArgumentsDigest(args);
+    assert.equal(d1, d2);
+  });
+
+  it("returns the same digest regardless of key order (stable serialization)", () => {
+    const d1 = computeArgumentsDigest({ a: 1, b: 2 });
+    const d2 = computeArgumentsDigest({ b: 2, a: 1 });
+    assert.equal(d1, d2);
+  });
+
+  it("returns different digests for different arguments", () => {
+    const d1 = computeArgumentsDigest({ a: 1 });
+    const d2 = computeArgumentsDigest({ a: 2 });
+    assert.notEqual(d1, d2);
+  });
+
+  it("returns a 'sha256:' prefixed digest", () => {
+    const digest = computeArgumentsDigest({ foo: "bar" });
+    assert.ok(
+      digest.startsWith("sha256:"),
+      `digest should start with "sha256:", got: ${digest}`,
+    );
+    // full format: sha256: + 64 lowercase hex chars
+    assert.match(digest, /^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("does not leak raw argument values into the digest string", () => {
+    const fakeToken = "tok-value";
+    const sensitiveArgs = { token: fakeToken, prompt: "hello-world" };
+    const digest = computeArgumentsDigest(sensitiveArgs);
+    assert.ok(
+      !digest.includes(fakeToken),
+      "digest must not leak raw token value",
+    );
+    assert.ok(
+      !digest.includes("hello-world"),
+      "digest must not leak raw prompt value",
+    );
+  });
+});
+
+// ── logToolInvocation ────────────────────────────────────────────
+
+describe("logToolInvocation", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "pw-invlog-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function sampleEntry(overrides: Partial<InvocationLogEntry> = {}): InvocationLogEntry {
+    return {
+      timestamp: new Date().toISOString(),
+      toolName: "read_workspace_file",
+      discoveryToken: "tok",
+      risk: "workspace_read_sensitive",
+      profile: "full",
+      arguments_digest: "sha256:" + "0".repeat(64),
+      result: "ok",
+      duration_ms: 42,
+      ...overrides,
+    };
+  }
+
+  it("writes an entry to invocation.log inside the provided logsDir", () => {
+    const logsDir = join(tempDir, ".patchwarden", "logs");
+    const entry = sampleEntry();
+    logToolInvocation(entry, { logsDir });
+
+    const logPath = join(logsDir, "invocation.log");
+    assert.ok(existsSync(logPath), "invocation.log should be created");
+
+    const content = readFileSync(logPath, "utf-8");
+    const lines = content.trim().split("\n");
+    assert.equal(lines.length, 1, "exactly one JSON line should be written");
+
+    const parsed = JSON.parse(lines[0]);
+    assert.equal(parsed.toolName, "read_workspace_file");
+    assert.equal(parsed.discoveryToken, "tok");
+    assert.equal(parsed.risk, "workspace_read_sensitive");
+    assert.equal(parsed.profile, "full");
+    assert.equal(parsed.result, "ok");
+    assert.equal(parsed.duration_ms, 42);
+    assert.match(parsed.arguments_digest, /^sha256:[a-f0-9]{64}$/);
+    assert.ok(!Number.isNaN(Date.parse(parsed.timestamp)));
+  });
+
+  it("appends multiple entries as JSON Lines", () => {
+    const logsDir = join(tempDir, "logs");
+    logToolInvocation(sampleEntry({ duration_ms: 1 }), { logsDir });
+    logToolInvocation(
+      sampleEntry({ duration_ms: 2, result: "error", error_code: "blocked" }),
+      { logsDir },
+    );
+
+    const content = readFileSync(join(logsDir, "invocation.log"), "utf-8");
+    const lines = content.trim().split("\n");
+    assert.equal(lines.length, 2);
+
+    const first = JSON.parse(lines[0]);
+    const second = JSON.parse(lines[1]);
+    assert.equal(first.duration_ms, 1);
+    assert.equal(first.result, "ok");
+    assert.equal(second.duration_ms, 2);
+    assert.equal(second.result, "error");
+    assert.equal(second.error_code, "blocked");
+  });
+
+  it("includes allowedScope and error_code when provided", () => {
+    const logsDir = join(tempDir, "logs");
+    logToolInvocation(
+      sampleEntry({
+        allowedScope: ["src/", "docs/"],
+        result: "error",
+        error_code: "scope_violation",
+      }),
+      { logsDir },
+    );
+
+    const parsed = JSON.parse(
+      readFileSync(join(logsDir, "invocation.log"), "utf-8").trim(),
+    );
+    assert.deepEqual(parsed.allowedScope, ["src/", "docs/"]);
+    assert.equal(parsed.error_code, "scope_violation");
+  });
+
+  it("omits error_code and allowedScope when not provided", () => {
+    const logsDir = join(tempDir, "logs");
+    logToolInvocation(sampleEntry(), { logsDir });
+
+    const parsed = JSON.parse(
+      readFileSync(join(logsDir, "invocation.log"), "utf-8").trim(),
+    );
+    assert.equal(parsed.error_code, undefined);
+    assert.equal(parsed.allowedScope, undefined);
+  });
+
+  it("does not throw when the log directory cannot be created", () => {
+    // Create a file, then attempt to use a path beneath it as logsDir.
+    // mkdirSync will fail with ENOTDIR because the parent is a file.
+    const blockingFile = join(tempDir, "blocker");
+    writeFileSync(blockingFile, "x", "utf-8");
+    const impossibleLogsDir = join(blockingFile, "subdir");
+
+    assert.doesNotThrow(() => {
+      logToolInvocation(sampleEntry(), { logsDir: impossibleLogsDir });
+    });
   });
 });

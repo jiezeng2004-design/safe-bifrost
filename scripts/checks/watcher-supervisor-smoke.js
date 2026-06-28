@@ -105,7 +105,7 @@ function createFixture(name) {
     server_version: "0.6.0",
     schema_epoch: "2026-06-22-v6",
     tool_profile: "chatgpt_core",
-    tool_count: 16,
+    tool_count: 21,
     tool_names: [],
     tool_manifest_sha256: "a".repeat(64),
   });
@@ -167,7 +167,7 @@ function fixtureEnv(fixture, mode, lifetimeMs) {
     ...process.env,
     APPDATA: fixture.appData,
     LOCALAPPDATA: fixture.localAppData,
-    CONTROL_PLANE_API_KEY: "watcher-supervisor-smoke-secret",
+    CONTROL_PLANE_API_KEY: "test-key",
     WATCHER_FIXTURE_MODE: mode,
     TUNNEL_FIXTURE_LIFETIME_MS: String(lifetimeMs),
   };

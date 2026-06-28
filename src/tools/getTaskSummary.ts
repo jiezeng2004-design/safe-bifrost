@@ -7,6 +7,7 @@ import { redactSensitiveValue } from "../security/contentRedaction.js";
 
 const TERMINAL_STATUSES = new Set([
   "done",
+  "done_by_agent",
   "failed",
   "failed_verification",
   "failed_scope_violation",
@@ -195,7 +196,7 @@ export function getTaskSummary(taskId: string, options: GetTaskSummaryOptions = 
       warnings.push("acceptance.json exists but could not be parsed.");
     }
   } else if (terminal) {
-    if (status.status !== "done" || outOfScope.length > 0 || verifyStatus === "failed") {
+    if ((status.status !== "done" && status.status !== "done_by_agent") || outOfScope.length > 0 || verifyStatus === "failed") {
       acceptanceStatus = "failed";
     } else if (verifyStatus === "passed") {
       acceptanceStatus = "ready_for_review";

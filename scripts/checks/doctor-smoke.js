@@ -42,6 +42,7 @@ try {
     "[OK]   Task directory writable",
     "[OK]   Example task directory read/write",
     "[OK]   allowedTestCommands is non-empty",
+    "[OK]   Release gate module loadable",
   ];
   for (const line of requiredLines) {
     if (!result.stdout.includes(line)) throw new Error(`doctor output missing stable line: ${line}`);

@@ -4,6 +4,7 @@ import { getTaskSummary, type TaskSummaryResult } from "./getTaskSummary.js";
 
 const TERMINAL_STATUSES = new Set([
   "done",
+  "done_by_agent",
   "failed",
   "failed_verification",
   "failed_scope_violation",

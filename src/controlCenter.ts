@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * PatchWarden Control Center — local HTTP dashboard service.
  *
@@ -27,6 +27,7 @@ import {
   type PatchWardenConfig,
 } from "./config.js";
 import { listTasks, type TaskEntry } from "./tools/listTasks.js";
+import type { AcceptanceStatus } from "./tools/createTask.js";
 import { listAgents, type AgentAvailability } from "./tools/listAgents.js";
 import { readWatcherStatus, type WatcherStatusSnapshot } from "./watcherStatus.js";
 import { redactSensitiveContent } from "./security/contentRedaction.js";
@@ -464,6 +465,7 @@ interface StaleClassification {
 
 const TERMINAL_TASK_STATUSES = new Set([
   "done",
+  "done_by_agent",
   "failed",
   "failed_verification",
   "failed_scope_violation",
@@ -1049,13 +1051,19 @@ function handleReconcile(res: ServerResponse, taskId: string): void {
     const runtimeData = readJsonFileSafe<Record<string, unknown>>(runtimePath) ?? {};
 
     const watcher = readWatcherStatusSafe();
+    const VALID_ACCEPTANCE = ["pending", "accepted", "rejected", "needs_fix", "blocked"];
+    const taskStatus = String(statusData.status || "pending");
+    const taskAcceptanceStatus = taskStatus === "done_by_agent"
+      ? (typeof statusData.acceptance_status === "string" && VALID_ACCEPTANCE.includes(statusData.acceptance_status) ? (statusData.acceptance_status as AcceptanceStatus) : "pending" as AcceptanceStatus)
+      : null;
     const taskEntry: TaskEntry = {
       task_id: taskId,
       plan_id: String(statusData.plan_id || ""),
       title: "",
       agent: String(statusData.agent || ""),
-      status: String(statusData.status || "pending") as TaskEntry["status"],
+      status: taskStatus as TaskEntry["status"],
       phase: String(runtimeData.phase || statusData.phase || "queued") as TaskEntry["phase"],
+      acceptance_status: taskAcceptanceStatus,
       created_at: String(statusData.created_at || ""),
       updated_at: String(statusData.updated_at || ""),
       workspace_root: String(statusData.workspace_root || config.workspaceRoot),
@@ -1199,13 +1207,19 @@ function handleTaskDetail(res: ServerResponse, taskId: string): void {
     let stale: StaleClassification | null = null;
     if (statusData) {
       const watcher = readWatcherStatusSafe();
+      const VALID_ACCEPTANCE2 = ["pending", "accepted", "rejected", "needs_fix", "blocked"];
+      const taskStatus2 = String(statusData.status || "pending");
+      const taskAcceptanceStatus2 = taskStatus2 === "done_by_agent"
+        ? (typeof statusData.acceptance_status === "string" && VALID_ACCEPTANCE2.includes(statusData.acceptance_status) ? (statusData.acceptance_status as AcceptanceStatus) : "pending" as AcceptanceStatus)
+        : null;
       const entry: TaskEntry = {
         task_id: taskId,
         plan_id: String(statusData.plan_id || ""),
         title: "",
         agent: String(statusData.agent || ""),
-        status: String(statusData.status || "pending") as TaskEntry["status"],
+        status: taskStatus2 as TaskEntry["status"],
         phase: String(runtimeData?.phase || statusData.phase || "queued") as TaskEntry["phase"],
+        acceptance_status: taskAcceptanceStatus2,
         created_at: String(statusData.created_at || ""),
         updated_at: String(statusData.updated_at || ""),
         workspace_root: String(statusData.workspace_root || config.workspaceRoot),

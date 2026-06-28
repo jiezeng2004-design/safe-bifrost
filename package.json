@@ -1,7 +1,7 @@
 {
   "name": "patchwarden",
-  "version": "0.6.4",
-  "description": "A secure local MCP bridge: clients save plans, local agents execute tasks, and results are returned through workspace-scoped files.",
+  "version": "1.1.0",
+  "description": "Secure local MCP bridge for ChatGPT and local agents, with workspace-scoped tasks, safe summaries, audits, and Direct editing.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -50,6 +50,7 @@
     "test:watcher-supervisor": "npm run build && node scripts/checks/watcher-supervisor-smoke.js",
     "check:tool-manifest": "npm run build && node scripts/checks/mcp-manifest-check.js",
     "check:direct-tool-manifest": "npm run build && node scripts/checks/mcp-manifest-check.js --profile chatgpt_direct",
+    "check:search-tool-manifest": "npm run build && node scripts/checks/mcp-manifest-check.js --profile chatgpt_search",
     "check:brand": "node scripts/checks/brand-check.js",
     "test:mcp": "npm run build && node scripts/checks/mcp-smoke.js",
     "test:http-mcp": "npm run build && node scripts/checks/http-mcp-smoke.js",

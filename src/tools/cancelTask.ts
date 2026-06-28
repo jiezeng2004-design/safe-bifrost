@@ -19,7 +19,7 @@ export function requestTaskTermination(taskId: string, force: boolean) {
 
   const data = JSON.parse(readFileSync(statusFile, "utf-8"));
   const currentStatus: TaskStatus = data.status;
-  if (["done", "failed", "failed_verification", "failed_scope_violation", "failed_policy_violation", "canceled"].includes(currentStatus)) {
+  if (["done", "done_by_agent", "failed", "failed_verification", "failed_scope_violation", "failed_policy_violation", "canceled"].includes(currentStatus)) {
     return {
       task_id: taskId,
       previous_status: currentStatus,

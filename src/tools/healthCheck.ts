@@ -6,7 +6,7 @@ import { listAgents } from "./listAgents.js";
 import { redactSensitiveContent, redactSensitiveValue } from "../security/contentRedaction.js";
 import { PATCHWARDEN_VERSION, TOOL_SCHEMA_EPOCH } from "../version.js";
 import type { ToolCatalogSnapshot } from "./toolCatalog.js";
-import { CHATGPT_CORE_TOOL_NAMES, CHATGPT_DIRECT_TOOL_NAMES, resolveToolProfile } from "./toolCatalog.js";
+import { CHATGPT_CORE_TOOL_NAMES, CHATGPT_DIRECT_TOOL_NAMES, CHATGPT_SEARCH_TOOL_NAMES, resolveToolProfile } from "./toolCatalog.js";
 import { readWatcherStatus } from "../watcherStatus.js";
 import { listTasks } from "./listTasks.js";
 
@@ -45,6 +45,8 @@ export function healthCheck(catalog?: ToolCatalogSnapshot, input: HealthCheckInp
       expectedNames = ["health_check"];
       profileErrors.push("Direct profile is disabled (enableDirectProfile=false). Only health_check is available. Set enableDirectProfile: true to enable Direct session tools.");
       profileConsistent = false;
+    } else if (activeProfile === "chatgpt_search") {
+      expectedNames = [...CHATGPT_SEARCH_TOOL_NAMES];
     }
     if (expectedNames) {
       const catalogNames = new Set(catalog.tool_names);
@@ -106,6 +108,7 @@ export function healthCheck(catalog?: ToolCatalogSnapshot, input: HealthCheckInp
     direct_sessions_dir: directSessions,
     direct_session_ttl_seconds: config.directSessionTtlSeconds,
     ...(activeProfile === "chatgpt_direct" ? { direct_tool_count: config.enableDirectProfile ? CHATGPT_DIRECT_TOOL_NAMES.length : 1 } : {}),
+    ...(activeProfile === "chatgpt_search" ? { search_tool_count: CHATGPT_SEARCH_TOOL_NAMES.length } : {}),
     connector_visibility: {
       status: "not_observable_server_side",
       verification: "Refresh or reconnect the Connector and verify tools/list from a new ChatGPT conversation.",

@@ -21,7 +21,7 @@ export interface PatchWardenConfig {
   defaultTaskTimeoutSeconds: number;
   maxTaskTimeoutSeconds: number;
   watcherStaleSeconds: number;
-  toolProfile?: "full" | "chatgpt_core" | "chatgpt_direct";
+  toolProfile?: "full" | "chatgpt_core" | "chatgpt_direct" | "chatgpt_search";
   repoAliases?: Record<string, string>;
   enableAgentAssessment?: boolean;
   agentAssessmentTimeoutSeconds?: number;
@@ -224,8 +224,14 @@ function normalizeConfig(config: PatchWardenConfig): PatchWardenConfig {
   if (!Number.isInteger(config.watcherStaleSeconds) || config.watcherStaleSeconds < 5 || config.watcherStaleSeconds > 3600) {
     throw new Error("watcherStaleSeconds must be an integer from 5 to 3600");
   }
-  if (config.toolProfile !== undefined && config.toolProfile !== "full" && config.toolProfile !== "chatgpt_core" && config.toolProfile !== "chatgpt_direct") {
-    throw new Error('toolProfile must be "full", "chatgpt_core", or "chatgpt_direct"');
+  if (
+    config.toolProfile !== undefined &&
+    config.toolProfile !== "full" &&
+    config.toolProfile !== "chatgpt_core" &&
+    config.toolProfile !== "chatgpt_direct" &&
+    config.toolProfile !== "chatgpt_search"
+  ) {
+    throw new Error('toolProfile must be "full", "chatgpt_core", "chatgpt_direct", or "chatgpt_search"');
   }
   if (config.enableAgentAssessment !== undefined && typeof config.enableAgentAssessment !== "boolean") {
     throw new Error("enableAgentAssessment must be a boolean");

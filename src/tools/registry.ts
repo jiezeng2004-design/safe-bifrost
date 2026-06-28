@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared tool registry for PatchWarden MCP server.
  * Used by both stdio (index.ts) and HTTP (httpServer.ts) transports.
  */
@@ -29,6 +29,20 @@ import { waitForTask } from "../tools/waitForTask.js";
 import { errorPayload, PatchWardenError } from "../errors.js";
 import { auditTask } from "../tools/auditTask.js";
 import { safeStatus } from "../tools/safeStatus.js";
+import {
+  safeAudit,
+  safeAuditDirectSession,
+  safeDiffSummary,
+  safeDirectSummary,
+  safeFinalizeDirectSession,
+  safeResult,
+  safeTestSummary,
+} from "../tools/safeViews.js";
+import { diagnoseTask } from "../tools/diagnoseTask.js";
+import { reconcileTasks } from "../tools/reconcileTasks.js";
+import { discoverTools } from "../tools/discoverTools.js";
+import { explainTool } from "../tools/explainTool.js";
+import { invokeDiscoveredTool } from "./invokeDiscoveredTool.js";
 import { logger } from "../logging.js";
 import { runTask } from "../runner/runTask.js";
 import { createDirectSession } from "../tools/createDirectSession.js";
@@ -38,6 +52,14 @@ import { runVerification } from "../tools/runVerification.js";
 import { finalizeDirectSession } from "../tools/finalizeDirectSession.js";
 import { auditSession } from "../tools/auditSession.js";
 import { syncFile } from "../tools/syncFile.js";
+import { createGoal, listGoals, readGoal, readGoalStatus } from "../goal/goalStore.js";
+import { suggestNextSubgoal } from "../goal/goalGraph.js";
+import { exportHandoff } from "../goal/handoffExport.js";
+import { acceptSubgoal, rejectSubgoal, summarizeGoalProgress } from "../goal/goalProgress.js";
+import { createSubgoalTask } from "./goalSubgoalTask.js";
+import { checkReleaseGate } from "./checkReleaseGate.js";
+import { mergeWorktreeTool } from "./mergeWorktree.js";
+import { discardWorktreeTool } from "./discardWorktree.js";
 import { TASK_TEMPLATE_NAMES } from "./taskTemplates.js";
 import {
   buildToolCatalogSnapshot,
@@ -430,6 +452,369 @@ export function getToolDefs(): ToolDef[] {
         required: ["task_id"],
       },
     },
+    {
+      name: "safe_result",
+      description:
+        "Return a low-noise structured task result summary without full logs, markdown, or diff content.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to summarize" },
+          max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum list entries to return per evidence group." },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "safe_audit",
+      description:
+        "Run audit_task and return only bounded structured audit evidence without full review markdown.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to audit" },
+          max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum list entries to return per evidence group." },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "safe_test_summary",
+      description:
+        "Return a compact verification summary for a task without stdout/stderr or test log content.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to summarize" },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "safe_diff_summary",
+      description:
+        "Return changed-file counts and bounded path metadata without returning diff content.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to summarize" },
+          max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum changed files to return." },
+        },
+        required: ["task_id"],
+      },
+    },    {
+      name: "diagnose_task",
+      description:
+        "v0.7.0: Diagnose a running or collecting_artifacts task using multi-signal evidence (heartbeat age, log freshness, child PID liveness, watcher ownership, artifact presence). Returns a conservative diagnosis (active_running, stale_running, possibly_stale_running, orphaned_running, artifact_collection_stuck, done_candidate, unknown, terminal) with confidence level and safe_actions. Never relies on a single signal; refuses to call PID-alive tasks 'active' when other signals are stale (PID reuse protection). Read-only — does not modify task state.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to diagnose" },
+          include_logs: {
+            type: "boolean",
+            default: false,
+            description: "When true, include redacted stdout/stderr tails in the output. Default false to keep output minimal.",
+          },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "reconcile_tasks",
+      description:
+        "v0.7.0: Scan stale running/collecting_artifacts tasks and either report or safely fix them. report_only (default) returns a diagnosis report without modifying state. safe_fix additionally writes high-confidence status transitions (failed_stale/orphaned/done_by_agent) atomically with backup (status.json.bak), audit fields, and an appended reconcile.log. Never touches tasks still owned by an active watcher; never applies medium/low confidence fixes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          mode: {
+            type: "string",
+            enum: ["report_only", "safe_fix"],
+            default: "report_only",
+            description: "report_only: read-only diagnosis report. safe_fix: additionally apply high-confidence status transitions with backup + atomic write + reconcile.log.",
+          },
+          max_age_minutes: {
+            type: "number",
+            minimum: 1,
+            maximum: 1440,
+            default: 30,
+            description: "Only consider tasks older than this (based on created_at or status.json mtime). Default 30 minutes.",
+          },
+          include_done_candidates: {
+            type: "boolean",
+            default: true,
+            description: "Include done_by_agent tasks as candidates (useful for auditing acceptance_status). Default true.",
+          },
+        },
+      },
+    },
+    {
+      name: "discover_tools",
+      description:
+        "v0.7.1: Search candidate tools by natural-language query (Chinese or English). Returns compressed summaries with risk level and schema digest. Filters by profile/mode/riskCeiling. High-risk tools (command/release/credential_sensitive) are hidden by default unless includeHighRisk=true. Read-only — never invokes tools.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Natural-language search query. Supports Chinese intent terms (验收/改文件/发布/状态/差异/卡住/旧任务/搜索/工具/诊断 etc.) and English keywords.",
+          },
+          profile: {
+            type: "string",
+            enum: ["full", "chatgpt_core", "chatgpt_direct", "chatgpt_search"],
+            description: "Filter tools by profile. Default: no filter (all profiles).",
+          },
+          mode: {
+            type: "string",
+            enum: ["delegate", "direct", "audit", "release", "diagnostic"],
+            description: "Filter tools by mode. Default: no filter.",
+          },
+          maxResults: {
+            type: "number",
+            minimum: 1,
+            maximum: 50,
+            default: 8,
+            description: "Maximum number of results. Default 8.",
+          },
+          riskCeiling: {
+            type: "string",
+            enum: ["readonly", "workspace_read_sensitive", "workspace_write", "command", "release", "credential_sensitive"],
+            description: "Maximum risk level to include. Tools above this level are hidden. Overrides includeHighRisk.",
+          },
+          includeHighRisk: {
+            type: "boolean",
+            default: false,
+            description: "When true, include high-risk tools (command/release/credential_sensitive) in results. Default false.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "explain_tool",
+      description:
+        "v0.7.1: Expand a single tool's metadata — title, summary, risk level, tags, aliases, profiles, modes, schema digest, and optionally the full inputSchema. Use after discover_tools to understand a specific tool before calling it. Read-only.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Tool name or alias to explain. Accepts both the canonical name (e.g. 'create_task') and aliases (e.g. 'new_task').",
+          },
+          includeSchema: {
+            type: "boolean",
+            default: false,
+            description: "When true, include the full inputSchema in the response. Default false to keep output minimal.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+    {
+      name: "invoke_discovered_tool",
+      description:
+        "v0.8.1: Invoke a previously discovered tool using a discoveryToken. The token must be obtained from discover_tools first. Enforces 10 security checks: token validity, toolName match, profile allowance, risk ceiling, sensitive path guard, assessment requirement, command whitelist, release confirmation, credential block, and invocation logging. Cannot call itself recursively.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          toolName: { type: "string", description: "Name of the tool to invoke (must match the discoveryToken's toolName)." },
+          arguments: {
+            type: "object",
+            description: "Arguments to pass to the tool. Must match the tool's inputSchema.",
+            additionalProperties: true,
+          },
+          discoveryToken: { type: "string", description: "Token id from discover_tools. Single-use, expires after 10 minutes." },
+          assessmentId: { type: "string", description: "Required for workspace_write/release risk tools. Obtained from the assessment flow." },
+        },
+        required: ["toolName", "arguments", "discoveryToken"],
+      },
+    },
+    {
+      name: "create_goal",
+      description:
+        "v0.8.0: Create a Goal Session for managing a multi-task objective with subgoal dependencies. Generates a structured directory under .patchwarden/goals/{goal_id}/ with GOAL.md, GOALS.md, and goal_status.json. Use list_goals to enumerate existing goals and read_goal to inspect details.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Goal title (human-readable)." },
+          goal_description: { type: "string", description: "Markdown description of the goal, success criteria, and context." },
+          repo_path: { type: "string", description: "Repository path inside workspaceRoot. Must be inside the configured workspace." },
+        },
+        required: ["title", "goal_description", "repo_path"],
+      },
+    },
+    {
+      name: "list_goals",
+      description:
+        "v0.8.0: List all Goal Sessions with completion summaries. Returns goal_id, title, status, subgoal counts, and last update time. Sorted by updated_at descending.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    {
+      name: "read_goal",
+      description:
+        "v0.8.0: Read full Goal Session details including GOAL.md content, goal_status.json, and all subgoals with dependency info. Use after list_goals to inspect a specific goal.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID from list_goals or create_goal." },
+        },
+        required: ["goal_id"],
+      },
+    },
+    {
+      name: "create_subgoal_task",
+      description:
+        "v0.8.0: Create a subgoal within a Goal Session and immediately launch an associated task. Atomically: addSubgoal → create_task → linkTask → mark subgoal running. The subgoal depends_on other subgoals (by id) which must be accepted before suggest_next_subgoal returns it.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID to add the subgoal to." },
+          subgoal_title: { type: "string", description: "Title of the new subgoal." },
+          depends_on: {
+            type: "array",
+            items: { type: "string" },
+            description: "Subgoal IDs this subgoal depends on. Dependencies must be accepted before this subgoal is suggested.",
+          },
+          plan_id: { type: "string", description: "Plan ID from save_plan. One of plan_id/inline_plan/template+goal is required." },
+          inline_plan: { type: "string", description: "Inline Markdown plan." },
+          plan_title: { type: "string", description: "Optional title for inline_plan." },
+          template: {
+            type: "string",
+            enum: [...TASK_TEMPLATE_NAMES],
+            description: "Built-in task template. Use with goal.",
+          },
+          goal: { type: "string", description: "Task goal when template is supplied." },
+          agent: { type: "string", description: "Agent name." },
+          repo_path: { type: "string", description: "Repository path inside workspaceRoot." },
+          test_command: { type: "string", description: "Verification command." },
+          verify_commands: {
+            type: "array",
+            maxItems: 20,
+            items: { type: "string" },
+            description: "Additional verification commands.",
+          },
+          timeout_seconds: { type: "integer", minimum: 1, description: "Task timeout in seconds." },
+          scope: { type: "array", items: { type: "string" }, description: "Allowed file/directory scope." },
+          forbidden: { type: "array", items: { type: "string" }, description: "Forbidden file/directory paths." },
+          verification: { type: "array", items: { type: "string" }, description: "Acceptance verification commands." },
+          done_evidence: { type: "array", items: { type: "string" }, description: "Required done evidence files." },
+          isolate_worktree: { type: "boolean", default: true, description: "v1.0.0: If true (default), create the task in an isolated git worktree under _workspacetrees/. Set false to run in the main workspace (v0.8.0 behavior)." },
+        },
+        required: ["goal_id", "subgoal_title", "repo_path"],
+      },
+    },
+    {
+      name: "accept_subgoal",
+      description:
+        "v0.8.0: Accept a subgoal after all its associated tasks are accepted (via audit_task). Validates every task in subgoal.task_ids has status 'accepted'. Throws subgoal_not_ready if any task is not yet accepted.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID." },
+          subgoal_id: { type: "string", description: "Subgoal ID to accept." },
+        },
+        required: ["goal_id", "subgoal_id"],
+      },
+    },
+    {
+      name: "reject_subgoal",
+      description:
+        "v0.8.0: Reject a subgoal with a reason. Allowed from any non-terminal status (ready/running/done_by_agent/needs_fix). Records rejected_reason in goal_status.json.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID." },
+          subgoal_id: { type: "string", description: "Subgoal ID to reject." },
+          reason: { type: "string", description: "Rejection reason (required)." },
+        },
+        required: ["goal_id", "subgoal_id", "reason"],
+      },
+    },
+    {
+      name: "suggest_next_subgoal",
+      description:
+        "v0.8.0: Suggest the next executable subgoal based on the dependency graph. Returns a ready subgoal whose dependencies are all accepted. If none ready, returns blocked_by list. Use to drive goal-directed task sequencing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID." },
+        },
+        required: ["goal_id"],
+      },
+    },
+    {
+      name: "summarize_goal_progress",
+      description:
+        "v0.8.0: Summarize goal completion: counts by status (accepted/rejected/running/ready/needs_fix/done_by_agent), completion_rate percentage, blocked_subgoals, and risks (needs_fix or running subgoals).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID." },
+        },
+        required: ["goal_id"],
+      },
+    },
+    {
+      name: "export_handoff",
+      description:
+        "v0.8.0: Export a handoff.md document for transferring a Goal Session to a new conversation. Includes current goal, completed/pending subgoals, recent diff/test results, blockers, next steps, and risks. Writes to .patchwarden/goals/{goal_id}/handoff.md.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          goal_id: { type: "string", description: "Goal ID." },
+        },
+        required: ["goal_id"],
+      },
+    },
+    {
+      name: "check_release_gate",
+      description:
+        "v1.0.0: Verify release readiness across five sequential stages: local_ready → packed_ready → published_verified → github_release_verified → ci_verified. Remote stages (published/github/ci) query npm registry and GitHub API via node:https read-only GET; network errors return 'not_checked' (not 'failed'). Never claims release complete before published_verified passes. Does not execute shell commands for remote queries.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo_path: { type: "string", description: "Repository path inside workspaceRoot." },
+          target_stage: {
+            type: "string",
+            enum: ["local_ready", "packed_ready", "published_verified", "github_release_verified", "ci_verified"],
+            description: "Target stage to verify. Stages before target are checked; stages after a failure are 'not_checked'.",
+          },
+          package_name: { type: "string", description: "npm package name for published_verified (e.g. 'patchwarden'). Required for published_verified stage." },
+          version: { type: "string", description: "Version string for published_verified (e.g. '1.0.0'). Required for published_verified stage." },
+          github_repo: { type: "string", description: "GitHub repo in 'owner/repo' form for github_release_verified and ci_verified." },
+          branch: { type: "string", description: "Git branch for ci_verified (e.g. 'main')." },
+        },
+        required: ["repo_path", "target_stage"],
+      },
+    },
+    {
+      name: "merge_worktree",
+      description:
+        "v1.0.0: Merge an isolated git worktree's changes back into the main workspace. Use after a subgoal task (created with isolate_worktree=true) is accepted. Updates worktree_status.json to status='merged'. Merge failures do NOT delete the worktree (preserved for manual inspection).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          worktree_id: { type: "string", description: "Worktree ID (wt_...) from create_subgoal_task." },
+          repo_path: { type: "string", description: "Main workspace repository path inside workspaceRoot." },
+        },
+        required: ["worktree_id", "repo_path"],
+      },
+    },
+    {
+      name: "discard_worktree",
+      description:
+        "v1.0.0: Discard an isolated git worktree safely. Removes the worktree (git worktree remove --force), deletes its branch, and archives status as 'discarded'. Use when a subgoal is rejected or abandoned. All paths pass guardWorkspacePath + sensitiveGuard.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          worktree_id: { type: "string", description: "Worktree ID (wt_...) to discard." },
+          repo_path: { type: "string", description: "Main workspace repository path inside workspaceRoot." },
+        },
+        required: ["worktree_id", "repo_path"],
+      },
+    },
   ];
 
   // Direct session tools
@@ -549,6 +934,47 @@ export function getToolDefs(): ToolDef[] {
     },
   });
 
+  tools.push({
+    name: "safe_direct_summary",
+    description:
+      "Return a low-noise Direct session summary without diff content or verification stdout/stderr tails.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "Direct session ID" },
+        max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum list entries to return per evidence group." },
+      },
+      required: ["session_id"],
+    },
+  });
+
+  tools.push({
+    name: "safe_finalize_direct_session",
+    description:
+      "Finalize a Direct session and return only bounded structured evidence, omitting diff and verification log content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "Direct session ID to finalize" },
+        max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum list entries to return per evidence group." },
+      },
+      required: ["session_id"],
+    },
+  });
+
+  tools.push({
+    name: "safe_audit_direct_session",
+    description:
+      "Audit a Direct session and return only bounded structured evidence without verification stdout/stderr tails.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "Direct session ID to audit" },
+        max_items: { type: "integer", minimum: 1, maximum: 50, default: 8, description: "Maximum list entries to return per evidence group." },
+      },
+      required: ["session_id"],
+    },
+  });
   tools.push({
     name: "sync_file",
     description:
@@ -775,6 +1201,83 @@ async function handleToolCallInternal(name: string, args: Record<string, unknown
       return toResult(safeStatus(String(args?.task_id ?? "")));
     }
 
+    case "safe_result": {
+      return toResult(safeResult(String(args?.task_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
+
+    case "safe_audit": {
+      return toResult(safeAudit(String(args?.task_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
+
+    case "safe_test_summary": {
+      return toResult(safeTestSummary(String(args?.task_id ?? "")));
+    }
+
+    case "safe_diff_summary": {
+      return toResult(safeDiffSummary(String(args?.task_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
+    case "diagnose_task": {
+      return toResult(diagnoseTask({
+        task_id: String(args?.task_id ?? ""),
+        include_logs: args?.include_logs !== undefined ? Boolean(args.include_logs) : undefined,
+      }));
+    }
+
+    case "reconcile_tasks": {
+      return toResult(reconcileTasks({
+        mode: args?.mode === "safe_fix" ? "safe_fix" : "report_only",
+        max_age_minutes: args?.max_age_minutes !== undefined ? Number(args.max_age_minutes) : undefined,
+        include_done_candidates: args?.include_done_candidates !== undefined ? Boolean(args.include_done_candidates) : undefined,
+      }));
+    }
+
+    case "discover_tools": {
+      const profile = args?.profile === "full" || args?.profile === "chatgpt_core" || args?.profile === "chatgpt_direct" || args?.profile === "chatgpt_search"
+        ? args.profile : undefined;
+      const mode = args?.mode === "delegate" || args?.mode === "direct" || args?.mode === "audit" || args?.mode === "release" || args?.mode === "diagnostic"
+        ? args.mode : undefined;
+      const riskCeiling = ["readonly", "workspace_read_sensitive", "workspace_write", "command", "release", "credential_sensitive"]
+        .includes(String(args?.riskCeiling ?? "")) ? String(args?.riskCeiling) as any : undefined;
+      return toResult(discoverTools({
+        query: String(args?.query ?? ""),
+        profile,
+        mode,
+        maxResults: args?.maxResults !== undefined ? Number(args.maxResults) : undefined,
+        riskCeiling,
+        includeHighRisk: args?.includeHighRisk !== undefined ? Boolean(args.includeHighRisk) : undefined,
+      }, getToolDefs()));
+    }
+
+    case "explain_tool": {
+      return toResult(explainTool({
+        name: String(args?.name ?? ""),
+        includeSchema: args?.includeSchema !== undefined ? Boolean(args.includeSchema) : undefined,
+      }, getToolDefs()));
+    }
+
+    case "invoke_discovered_tool": {
+      const profile = resolveToolProfile(getConfig().toolProfile);
+      const result = await invokeDiscoveredTool({
+        toolName: String(args?.toolName ?? ""),
+        arguments: (args?.arguments && typeof args.arguments === "object" ? args.arguments : {}) as Record<string, unknown>,
+        discoveryToken: String(args?.discoveryToken ?? ""),
+        assessmentId: args?.assessmentId ? String(args.assessmentId) : undefined,
+      }, {
+        tools: getToolDefs(),
+        profile,
+        dispatch: async (name, dispatchArgs) => {
+          return handleToolCall(name, dispatchArgs);
+        },
+      });
+      return toResult(result);
+    }
+
     case "run_task": {
       const config = getConfig();
       if ((config as any).enableRunTaskTool !== true) {
@@ -840,6 +1343,26 @@ async function handleToolCallInternal(name: string, args: Record<string, unknown
       }));
     }
 
+    case "safe_direct_summary": {
+      guardDirectProfileEnabled();
+      return toResult(safeDirectSummary(String(args?.session_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
+
+    case "safe_finalize_direct_session": {
+      guardDirectProfileEnabled();
+      return toResult(safeFinalizeDirectSession(String(args?.session_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
+
+    case "safe_audit_direct_session": {
+      guardDirectProfileEnabled();
+      return toResult(safeAuditDirectSession(String(args?.session_id ?? ""), {
+        max_items: args?.max_items !== undefined ? Number(args.max_items) : undefined,
+      }));
+    }
     case "sync_file": {
       guardDirectProfileEnabled();
       return toResult(syncFile(
@@ -851,6 +1374,100 @@ async function handleToolCallInternal(name: string, args: Record<string, unknown
           expected_target_sha256: args?.expected_target_sha256 ? String(args.expected_target_sha256) : undefined,
         }
       ));
+    }
+
+    case "create_goal": {
+      return toResult(createGoal(
+        String(args?.repo_path ?? ""),
+        String(args?.title ?? ""),
+        String(args?.goal_description ?? "")
+      ));
+    }
+
+    case "list_goals": {
+      return toResult({ goals: listGoals() });
+    }
+
+    case "read_goal": {
+      return toResult(readGoal(String(args?.goal_id ?? "")));
+    }
+
+    case "create_subgoal_task": {
+      return toResult(createSubgoalTask({
+        goal_id: String(args?.goal_id ?? ""),
+        subgoal_title: String(args?.subgoal_title ?? ""),
+        depends_on: Array.isArray(args?.depends_on) ? args.depends_on.map(String) : undefined,
+        plan_id: args?.plan_id ? String(args.plan_id) : undefined,
+        inline_plan: args?.inline_plan ? String(args.inline_plan) : undefined,
+        plan_title: args?.plan_title ? String(args.plan_title) : undefined,
+        template: args?.template ? String(args.template) as any : undefined,
+        goal: args?.goal ? String(args.goal) : undefined,
+        agent: args?.agent ? String(args.agent) : undefined,
+        repo_path: String(args?.repo_path ?? ""),
+        test_command: args?.test_command ? String(args.test_command) : undefined,
+        verify_commands: Array.isArray(args?.verify_commands) ? args.verify_commands.map(String) : undefined,
+        timeout_seconds: args?.timeout_seconds ? Number(args.timeout_seconds) : undefined,
+        scope: Array.isArray(args?.scope) ? args.scope.map(String) : undefined,
+        forbidden: Array.isArray(args?.forbidden) ? args.forbidden.map(String) : undefined,
+        verification: Array.isArray(args?.verification) ? args.verification.map(String) : undefined,
+        done_evidence: Array.isArray(args?.done_evidence) ? args.done_evidence.map(String) : undefined,
+        isolate_worktree: args?.isolate_worktree === undefined ? undefined : Boolean(args.isolate_worktree),
+      }));
+    }
+
+    case "accept_subgoal": {
+      return toResult(acceptSubgoal(
+        String(args?.goal_id ?? ""),
+        String(args?.subgoal_id ?? "")
+      ));
+    }
+
+    case "reject_subgoal": {
+      return toResult(rejectSubgoal(
+        String(args?.goal_id ?? ""),
+        String(args?.subgoal_id ?? ""),
+        String(args?.reason ?? "")
+      ));
+    }
+
+    case "suggest_next_subgoal": {
+      const goalStatus = readGoalStatus(String(args?.goal_id ?? ""));
+      return toResult(suggestNextSubgoal(goalStatus));
+    }
+
+    case "summarize_goal_progress": {
+      return toResult(summarizeGoalProgress(String(args?.goal_id ?? "")));
+    }
+
+    case "export_handoff": {
+      const goalId = String(args?.goal_id ?? "");
+      const goalStatus = readGoalStatus(goalId);
+      return toResult(exportHandoff(goalId, goalStatus));
+    }
+
+    case "check_release_gate": {
+      return toResult(await checkReleaseGate({
+        repo_path: String(args?.repo_path ?? ""),
+        target_stage: String(args?.target_stage ?? "local_ready") as any,
+        package_name: args?.package_name ? String(args.package_name) : undefined,
+        version: args?.version ? String(args.version) : undefined,
+        github_repo: args?.github_repo ? String(args.github_repo) : undefined,
+        branch: args?.branch ? String(args.branch) : undefined,
+      }));
+    }
+
+    case "merge_worktree": {
+      return toResult(mergeWorktreeTool({
+        worktree_id: String(args?.worktree_id ?? ""),
+        repo_path: String(args?.repo_path ?? ""),
+      }));
+    }
+
+    case "discard_worktree": {
+      return toResult(discardWorktreeTool({
+        worktree_id: String(args?.worktree_id ?? ""),
+        repo_path: String(args?.repo_path ?? ""),
+      }));
     }
 
     default:

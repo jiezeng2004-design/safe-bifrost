@@ -34,6 +34,7 @@ import {
 } from "./changeCapture.js";
 import { PatchWardenError, errorPayload } from "../errors.js";
 import { diagnoseAndroidBuild } from "../tools/androidDoctor.js";
+import { runPostTaskCleanup, type PostTaskCleanupReport } from "./postTaskCleanup.js";
 
 const HEARTBEAT_INTERVAL_MS = 2000;
 const GRACEFUL_KILL_MS = 2000;
@@ -150,6 +151,14 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     current_command: null,
     error: null,
   });
+  // v0.7.0: record task_started_at and watcher_instance_id so diagnose_task
+  // can detect PID reuse and orphaned tasks. watcher_instance_id comes from
+  // the watcher process env; when run_task MCP tool is used directly, this
+  // field is intentionally left undefined so ownership cannot be falsely claimed.
+  writeTaskRuntime(taskDir, {
+    task_started_at: new Date(startedAtMs).toISOString(),
+    watcher_instance_id: process.env.PATCHWARDEN_WATCHER_INSTANCE_ID || undefined,
+  });
   setTaskPhase(taskDir, "preparing", null, "Capturing pre-task repository state.");
 
   let beforeSnapshot;
@@ -230,19 +239,40 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
           ? `Verification command \"${failedVerification.command}\" could not start: ${failedVerification.spawnError}`
           : `Verification command \"${failedVerification.command}\" exited with code ${failedVerification.exitCode}.`;
       } else if (verifyResults.length === verifyCommands.length) {
-        finalStatus = "done";
+        finalStatus = "done_by_agent";
       } else {
         finalError = "Verification did not complete all configured commands.";
       }
     } else {
       testResult = skippedTest(testCommand, repoPath, "No verification command configured.");
-      finalStatus = "done";
+      finalStatus = "done_by_agent";
     }
   } catch (error) {
     lastCaughtError = error;
     finalError = errorMessage(error);
   }
 
+  let cleanupReport: PostTaskCleanupReport = {
+    enabled: true,
+    removed: [],
+    skipped: [],
+    source_files_touched: 0,
+  };
+  if (finalStatus !== "canceled") {
+    try {
+      cleanupReport = runPostTaskCleanup(repoPath, taskDir);
+      updateStatus(taskDir, { cleanup: cleanupReport });
+    } catch (error) {
+      cleanupReport = {
+        enabled: true,
+        removed: [],
+        skipped: [{ path: ".", reason: "post_task_cleanup", skip_reason: errorMessage(error) }],
+        source_files_touched: 0,
+      };
+      writeFileSync(join(taskDir, "post-task-cleanup.json"), JSON.stringify(cleanupReport, null, 2), "utf-8");
+      updateStatus(taskDir, { cleanup: cleanupReport });
+    }
+  }
   setTaskPhase(taskDir, "collecting_artifacts", null, "Capturing post-task state and writing reports.");
   const artifactCollectionStartedAt = new Date().toISOString();
   let changes: ChangeArtifacts;
@@ -310,7 +340,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       "",
     ].join("\n"), "utf-8");
     // Don't override test failure with artifact failure
-    if (finalStatus === "done") {
+    if (finalStatus === "done_by_agent") {
       finalError = `Change capture failed: ${artifactCollectionError}`;
       finalStatus = "failed";
     } else {
@@ -335,7 +365,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
       );
   } catch (error) {
     finalError ||= `Workspace scope capture failed: ${errorMessage(error)}`;
-    if (finalStatus === "done") finalStatus = "failed";
+    if (finalStatus === "done_by_agent") finalStatus = "failed";
   }
 
   // Phase 4: Pre-existing external dirty files are warnings, not failures
@@ -400,8 +430,8 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
   writeFileSync(join(taskDir, "verify.json"), JSON.stringify(verifyJson, null, 2), "utf-8");
   writeFileSync(join(taskDir, "verify.log"), buildVerifyLog(verifyJson.commands), "utf-8");
 
-  if (!["canceled", "done", "failed_verification", "failed_scope_violation", "failed_policy_violation"].includes(finalStatus)) finalStatus = "failed";
-  const finalPhase: TaskPhase = finalStatus === "done" ? "completed" : finalStatus;
+  if (!["canceled", "done_by_agent", "failed_verification", "failed_scope_violation", "failed_policy_violation"].includes(finalStatus)) finalStatus = "failed";
+  const finalPhase: TaskPhase = finalStatus === "done_by_agent" ? "done_by_agent" : finalStatus;
   const followup = buildFailureFollowup(finalStatus, finalError, verifyJson.commands);
 
   // Phase 7: Run Android build environment diagnostics if android_app exists
@@ -462,6 +492,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     artifact_collection_error: artifactCollectionError,
     artifact_collection_started_at: artifactCollectionStartedAt,
     artifact_collection_finished_at: artifactCollectionFinishedAt,
+    cleanup: cleanupReport,
     artifact_manifest: artifactManifest,
     out_of_scope_changes: outOfScopeChanges,
     new_out_of_scope_changes: newOutOfScopeChanges,
@@ -479,7 +510,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     commands_observed: [],
     verify: verifyJson,
     artifacts: [
-      "result.md", "result.json", "diff.patch", "git.diff", "test.log", "verify.log", "verify.json", "changed-files.json", "file-stats.json", "artifact_manifest.json",
+      "result.md", "result.json", "diff.patch", "git.diff", "test.log", "verify.log", "verify.json", "changed-files.json", "file-stats.json", "artifact_manifest.json", "post-task-cleanup.json",
       ...(outOfScopeChanges.length > 0 ? ["rollback_scope_violation_plan.md", "rollback-plan.json"] : []),
       ...(artifactStatus !== "collected" ? ["partial_result.md"] : []),
     ],
@@ -495,7 +526,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     failed_command: followup.failed_command,
     suggested_next_action: followup.suggested_next_action,
     safe_followup_prompt: followup.safe_followup_prompt,
-    next_steps: finalStatus === "done"
+    next_steps: finalStatus === "done_by_agent"
       ? ["Review get_task_summary and audit_task before accepting the work."]
       : ["Resolve the reported failure before accepting the work."],
   }, null, 2), "utf-8");
@@ -522,6 +553,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     artifact_collection_error: artifactCollectionError,
     artifact_collection_started_at: artifactCollectionStartedAt,
     artifact_collection_finished_at: artifactCollectionFinishedAt,
+    cleanup: cleanupReport,
     out_of_scope_changes: outOfScopeChanges,
     new_out_of_scope_changes: newOutOfScopeChanges,
     preexisting_external_dirty_files: preexistingExternalDirty,
@@ -532,6 +564,7 @@ export async function runTask(taskId: string): Promise<TaskRunResult> {
     workspace_dirty_before: changes.workspace_dirty_before,
     workspace_dirty_after: changes.workspace_dirty_after,
     workspace_dirty: changes.workspace_dirty_after,
+    acceptance_status: finalStatus === "done_by_agent" ? "pending" : null,
   });
   writeTaskRuntime(taskDir, {
     phase: finalPhase,
@@ -559,7 +592,7 @@ function buildFailureFollowup(
   safe_followup_prompt: string | null;
 } {
   const failed = commands.find((command) => command.status !== "passed");
-  if (status === "done") {
+  if (status === "done_by_agent" || status === "done") {
     return {
       failure_reason: null,
       failed_command: null,
@@ -634,6 +667,12 @@ async function runManagedProcess(options: {
   } catch (error) {
     return { exitCode: null, stdout: "", stderr: "", spawnError: errorMessage(error), terminationReason: null };
   }
+  // v0.7.0: record child_started_at immediately so diagnose_task can detect
+  // PID reuse by comparing this timestamp with the live process start time.
+  writeTaskRuntime(options.taskDir, {
+    child_pid: child.pid,
+    child_started_at: new Date().toISOString(),
+  });
 
   const stdoutStream = openStream(options.stdoutPath);
   const stderrStream = openStream(options.stderrPath);
@@ -904,7 +943,7 @@ function buildResultMarkdown(input: {
     input.error || "Agent execution and configured verification completed successfully.",
     "",
     "## Risks",
-    input.status === "done"
+    input.status === "done_by_agent" || input.status === "done"
       ? "- Review git.diff and changed-files.json before accepting the task."
       : "- Task did not complete successfully; outputs may be partial.",
     "",

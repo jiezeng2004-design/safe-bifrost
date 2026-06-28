@@ -3,7 +3,7 @@ import { resolve, join } from "node:path";
 import { getTasksDir, getPlansDir, getConfig } from "../config.js";
 import { guardPath } from "../security/pathGuard.js";
 import { readTaskRuntime } from "../taskRuntime.js";
-import type { TaskPhase, TaskStatus } from "./createTask.js";
+import type { TaskPhase, TaskStatus, AcceptanceStatus } from "./createTask.js";
 import {
   derivePendingReason,
   readWatcherStatus,
@@ -19,6 +19,7 @@ export interface TaskEntry {
   agent: string;
   status: TaskStatus;
   phase: TaskPhase;
+  acceptance_status: AcceptanceStatus;
   created_at: string;
   updated_at: string;
   workspace_root: string;
@@ -38,6 +39,7 @@ export interface ListTasksInput {
   status?: string;
   repo_path?: string;
   active_only?: boolean;
+  acceptance_status?: string;
   limit?: number;
 }
 
@@ -54,6 +56,7 @@ export function listTasks(input?: ListTasksInput): ListTasksOutput {
   const plansDir = getPlansDir(config);
   const limit = input?.limit && input.limit > 0 ? Math.min(input.limit, 100) : 20;
   const filterStatus = input?.status || null;
+  const filterAcceptance = input?.acceptance_status || null;
   const filterRepo = input?.repo_path?.trim().replace(/\\/g, "/") || null;
   const watcher = readWatcherStatus(config);
 
@@ -88,6 +91,12 @@ export function listTasks(input?: ListTasksInput): ListTasksOutput {
       const data = JSON.parse(readFileSync(statusFile, "utf-8"));
       const runtime = readTaskRuntime(taskDir);
       if (filterStatus && data.status !== filterStatus) continue;
+      if (filterAcceptance) {
+        const taskAcceptance = data.status === "done_by_agent"
+          ? (typeof data.acceptance_status === "string" ? data.acceptance_status : "pending")
+          : null;
+        if (taskAcceptance !== filterAcceptance) continue;
+      }
       if (input?.active_only && data.status !== "pending" && data.status !== "running") continue;
       const normalizedRepo = String(data.repo_path || ".").replace(/\\/g, "/");
       const normalizedResolvedRepo = String(data.resolved_repo_path || "").replace(/\\/g, "/");
@@ -109,6 +118,10 @@ export function listTasks(input?: ListTasksInput): ListTasksOutput {
       }
 
       const phase = runtime.phase || data.phase || "queued";
+      const VALID_ACCEPTANCE = ["pending", "accepted", "rejected", "needs_fix", "blocked"];
+      const acceptanceStatus: AcceptanceStatus = data.status === "done_by_agent"
+        ? (typeof data.acceptance_status === "string" && VALID_ACCEPTANCE.includes(data.acceptance_status) ? data.acceptance_status : "pending")
+        : null;
       tasks.push({
         task_id: taskId,
         plan_id: data.plan_id || "",
@@ -116,6 +129,7 @@ export function listTasks(input?: ListTasksInput): ListTasksOutput {
         agent: data.agent || "",
         status: data.status || "pending",
         phase,
+        acceptance_status: acceptanceStatus,
         created_at: data.created_at || "",
         updated_at: data.updated_at || "",
         workspace_root: data.workspace_root || config.workspaceRoot,

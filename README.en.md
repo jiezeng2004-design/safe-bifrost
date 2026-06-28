@@ -8,10 +8,9 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Current stable release: **v0.6.4**. See the
-[release notes](docs/release-v0.6.4.md),
-[migration guide](docs/migration-from-safe-bifrost.md), and
-[GitHub Release](https://github.com/jiezeng2004-design/PatchWarden/releases/tag/v0.6.4).
+Current source version: **v1.1.0**. See the
+[CHANGELOG](CHANGELOG.md), [migration guide](docs/migration-from-safe-bifrost.md), and
+[release checklist](docs/release-checklist.md). Verify GitHub Release / npm publication separately before release.
 
 PatchWarden is a local-first MCP safety and verification layer for AI coding
 agents, with workspace confinement, command allowlists, scope-violation
@@ -266,7 +265,7 @@ execution still requires a separate Watcher.
 New-Item -ItemType Directory .\patchwarden-runtime
 Set-Location .\patchwarden-runtime
 npm.cmd init -y
-npm.cmd install patchwarden@0.6.4
+npm.cmd install patchwarden@<published-version>
 Copy-Item .\node_modules\patchwarden\examples\config.example.json .\patchwarden.config.json
 $env:PATCHWARDEN_CONFIG = (Resolve-Path .\patchwarden.config.json)
 node .\node_modules\patchwarden\dist\runner\watch.js
@@ -275,10 +274,10 @@ node .\node_modules\patchwarden\dist\runner\watch.js
 An MCP client can launch:
 
 ```text
-npx.cmd -y patchwarden@0.6.4
+npx.cmd -y patchwarden@<published-version>
 ```
 
-Pin the version in important environments instead of using `latest`
+Replace `<published-version>` with a version that exists on npm/GitHub, and pin that version in important environments instead of using `latest`
 unconditionally.
 
 ## Complete configuration guide
@@ -331,7 +330,7 @@ Configuration fields:
 | `workspaceRoot` | Yes | The only workspace root PatchWarden may access. |
 | `plansDir` | Yes | Plan directory, normally `.patchwarden/plans`. |
 | `tasksDir` | Yes | Task and result directory, normally `.patchwarden/tasks`. |
-| `toolProfile` | No | `full` or `chatgpt_core`; use `full` for local clients. |
+| `toolProfile` | No | `full`, `chatgpt_core`, `chatgpt_direct`, or `chatgpt_search`; use `full` for local clients and `chatgpt_search` for compact discovery-driven clients. |
 | `agents` | Yes | Execution-agent allowlist; supports `{repo}` and `{prompt}` placeholders. |
 | `allowedTestCommands` | Yes | Exact allowlist for independent verification commands. |
 | `repoAllowedTestCommands` | No | Extra exact commands keyed by workspace-relative repository path; wildcards are unsupported. |
@@ -434,7 +433,7 @@ Pinned npm configuration:
 ```toml
 [mcp_servers.patchwarden]
 command = "npx.cmd"
-args = ["-y", "patchwarden@0.6.4"]
+args = ["-y", "patchwarden@<published-version>"]
 
 [mcp_servers.patchwarden.env]
 PATCHWARDEN_CONFIG = "D:\\path\\to\\patchwarden.config.json"
@@ -494,7 +493,7 @@ PatchWarden.cmd start core
 The launcher:
 
 - Builds `dist/index.js` if it is missing.
-- Verifies v0.6.4, the fixed 17-tool `chatgpt_core` catalog, and its schema
+- Verifies v1.1.0, the fixed 21-tool `chatgpt_core` catalog, and its schema
   manifest.
 - Reads or prompts for the Tunnel ID.
 - Reads or prompts for the runtime API key.
@@ -742,7 +741,7 @@ Optional token configuration:
 Set the token in the PowerShell process that starts the server:
 
 ```powershell
-$env:PATCHWARDEN_OWNER_TOKEN = "use-a-random-local-only-value"
+$env:PATCHWARDEN_OWNER_TOKEN = "<token>"
 ```
 
 Clients can send `Authorization: Bearer ...` or `x-patchwarden-token`. Never
@@ -931,13 +930,13 @@ names.
 
 ## MCP tools and profiles
 
-`chatgpt_core` is the fixed 17-tool profile used by the ChatGPT tunnel:
+`chatgpt_core` is the fixed 21-tool profile used by the ChatGPT tunnel:
 
 `health_check`, `list_agents`, `list_workspace`,
 `read_workspace_file`, `save_plan`, `create_task`,
 `wait_for_task`, `get_task_summary`, `get_diff`, `get_result`,
 `get_result_json`, `get_test_log`, `get_task_status`, `list_tasks`,
-`cancel_task`, `audit_task`, and `safe_status`.
+`cancel_task`, `audit_task`, `safe_status`, `safe_result`, `safe_audit`, `safe_test_summary`, and `safe_diff_summary`.
 
 `get_task_summary` keeps the backward-compatible `standard` view by default.
 ChatGPT should request `view: "compact"` first; terminal `wait_for_task`
@@ -957,7 +956,7 @@ to `full`.
 
 ### ChatGPT Direct mode
 
-Direct mode exposes ten guarded tools so ChatGPT can create an editing
+Direct mode exposes thirteen guarded tools so ChatGPT can create an editing
 session, read and search source files, apply hash-bound JSON patches, run
 exactly allowlisted verification commands, finalize the evidence, and audit
 the result without a local execution agent.
@@ -981,7 +980,7 @@ On first use, provide the `tunnel-client.exe` path and a Tunnel ID dedicated
 to the Direct Connector. The launcher uses the `patchwarden-direct` profile,
 stores runtime state under `%LOCALAPPDATA%\patchwarden\runtime-direct`, skips
 the Watcher, and retains the existing DPAPI credential handling. In a fresh
-ChatGPT conversation, `health_check` should report `chatgpt_direct`, ten
+ChatGPT conversation, `health_check` should report `chatgpt_direct`, thirteen
 tools, and `direct_profile_enabled=true`.
 
 ## Security boundaries and local data
@@ -1017,7 +1016,7 @@ Start with a dedicated test workspace and a repository you can recover.
 Upgrade a pinned npm installation:
 
 ```powershell
-npm.cmd install patchwarden@0.6.4
+npm.cmd install patchwarden@<published-version>
 ```
 
 Upgrade a source checkout:
@@ -1101,8 +1100,9 @@ and release-asset checksums independently.
 - [x] ChatGPT Connector / tunnel
 - [x] Doctor and runtime health checks
 - [x] Tool manifest and schema-drift detection
-- [ ] Worktree isolation
-- [ ] Multi-agent task queue
+- [x] Release Gate (five-stage pre-release verification)
+- [x] Worktree isolation
+- [x] Multi-agent routing
 - [ ] Local dashboard
 
 ## License

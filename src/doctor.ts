@@ -19,6 +19,9 @@ import { guardPlanContent } from "./security/planGuard.js";
 import { TASK_READ_ONLY_FILES } from "./tools/getTaskFile.js";
 import { getToolDefs } from "./tools/registry.js";
 import { CHATGPT_CORE_TOOL_NAMES, CHATGPT_DIRECT_TOOL_NAMES, selectToolsForProfile } from "./tools/toolCatalog.js";
+import { buildToolRegistry } from "./tools/toolRegistry.js";
+import { runAllSchemaDriftChecks } from "./tools/schemaDriftCheck.js";
+import { runReleaseGateCheck } from "./release/releaseGate.js";
 import { PATCHWARDEN_VERSION } from "./version.js";
 
 // ── State ──────────────────────────────────────────────────────────
@@ -245,7 +248,7 @@ try {
   const coreTools = selectToolsForProfile(fullTools, "chatgpt_core", config?.enableDirectProfile);
   const createSchema = coreTools.find((tool) => tool.name === "create_task")?.inputSchema as any;
   const waitSchema = coreTools.find((tool) => tool.name === "wait_for_task")?.inputSchema as any;
-  check("Full tool profile exposes 30 tools", fullTools.length === 30, `${fullTools.length} tools`);
+  check("Full tool profile exposes 54 tools", fullTools.length === 54, `${fullTools.length} tools`);
   check(
     `chatgpt_core profile exposes the exact ${CHATGPT_CORE_TOOL_NAMES.length}-tool manifest`,
     JSON.stringify(coreTools.map((tool) => tool.name)) === JSON.stringify(CHATGPT_CORE_TOOL_NAMES),
@@ -280,9 +283,41 @@ try {
     results.push(`[OK]   chatgpt_direct enabled check skipped (enableDirectProfile=false)`);
     ok++;
   }
+
+  // 16. Schema drift 检查（v0.9.0）—— warn 级别，不阻断 doctor:ci
+  // 用 fullTools 同时构建 registry 和 toolDefs Map，确保 schema digest 比对基准一致。
+  const driftRegistry = buildToolRegistry(fullTools);
+  const driftToolDefs = new Map<string, { inputSchema: unknown }>();
+  for (const tool of fullTools) {
+    driftToolDefs.set(tool.name, { inputSchema: tool.inputSchema });
+  }
+  const driftResult = runAllSchemaDriftChecks(driftRegistry, driftToolDefs);
+  if (driftResult.ok) {
+    results.push(`[OK]   Schema drift check — no drift detected`);
+    ok++;
+  } else {
+    // 每个 warning 单独输出为 WARN，与其他自检项的多警告模式一致
+    for (const w of driftResult.warnings) {
+      results.push(`[WARN] Schema drift: ${w}`);
+      warn++;
+    }
+  }
 } finally {
   if (previousProfile === undefined) delete process.env.PATCHWARDEN_TOOL_PROFILE;
   else process.env.PATCHWARDEN_TOOL_PROFILE = previousProfile;
+}
+
+// 17. Release gate module loadable (v1.0.0) — module integrity only.
+// Does NOT execute local_ready (would recurse into doctor:ci).
+try {
+  const releaseGateReady = typeof runReleaseGateCheck === "function";
+  check(
+    "Release gate module loadable",
+    releaseGateReady,
+    releaseGateReady ? "runReleaseGateCheck exported" : "runReleaseGateCheck missing or invalid",
+  );
+} catch (error) {
+  check("Release gate module loadable", false, error instanceof Error ? error.message : String(error));
 }
 
 // 9. HTTP port check

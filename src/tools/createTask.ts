@@ -36,16 +36,36 @@ import {
   type PendingReason,
   type WatcherStatusSnapshot,
 } from "../watcherStatus.js";
+import { routeAgent, type AgentRouteResult } from "../agents/agentRouter.js";
 
 export type TaskStatus =
   | "pending"
   | "running"
-  | "done"
+  | "collecting_artifacts"
+  | "done_by_agent"      // v0.7.0: agent self-reported done or status reconciled to done; acceptance_status defaults to "pending"
+  | "accepted"           // v0.7.2: audit_task confirmed acceptance
+  | "rejected"           // v0.7.2: audit_task confirmed rejection
+  | "needs_fix"          // v0.7.2: audit_task requires fixes before acceptance
+  | "blocked"            // v0.7.2: audit_task blocked by approval boundary
+  | "done"               // legacy terminal status, kept for backward compatibility
   | "failed"
   | "failed_verification"
   | "failed_scope_violation"
   | "failed_policy_violation"
+  | "failed_stale"       // v0.7.0: process dead / heartbeat expired
+  | "orphaned"           // v0.7.0: watcher no longer owns the task
   | "canceled";
+
+/**
+ * v0.7.2 acceptance status — only meaningful for done_by_agent.
+ * - "pending": done_by_agent reached but not yet audited/accepted
+ * - "accepted": audit_task confirmed all evidence passes
+ * - "rejected": audit_task found fail-level issues
+ * - "needs_fix": audit_task found warn-level issues requiring fixes
+ * - "blocked": audit_task blocked by approval boundary (e.g. release claims)
+ * - null: status has no acceptance semantics (running, failed, etc.)
+ */
+export type AcceptanceStatus = "pending" | "accepted" | "rejected" | "needs_fix" | "blocked" | null;
 export type TaskPhase =
   | "queued"
   | "preparing"
@@ -59,6 +79,13 @@ export type TaskPhase =
   | "failed_verification"
   | "failed_scope_violation"
   | "failed_policy_violation"
+  | "failed_stale"        // v0.7.0
+  | "orphaned"             // v0.7.0
+  | "done_by_agent"        // v0.7.0
+  | "accepted"             // v0.7.2
+  | "rejected"             // v0.7.2
+  | "needs_fix"            // v0.7.2
+  | "blocked"              // v0.7.2
   | "canceled";
 
 export interface CreateTaskInput {
@@ -75,6 +102,14 @@ export interface CreateTaskInput {
   timeout_seconds?: number;
   execution_mode?: "assess_only" | "execute";
   assessment_id?: string;
+  // v0.7.2: 验收标准绑定到任务创建
+  scope?: string[];           // 允许修改的文件/目录范围（相对于 repo_path）
+  forbidden?: string[];       // 禁止修改的文件/目录
+  verification?: string[];     // 验收时必须通过的验证命令（独立于 verify_commands）
+  done_evidence?: string[];    // 完成证据要求（例如 ["result.md", "test.log", "diff.patch"]）
+  // v0.8.0: Goal Session 关联
+  goal_id?: string;
+  subgoal_id?: string;
 }
 
 export interface AssessOnlyOutput {
@@ -167,12 +202,23 @@ export function createTask(input: CreateTaskInput): CreateTaskResult {
   // ── Validate required fields ──
   // agent and repo_path are required unless assessment_id fills them.
   // assess_only always requires them because the risk engine needs to check them.
+  // v1.0.0: agent is now optional — if omitted, routeAgent recommends one based on scope/goal/plan.
+  let agentSelectionReason: AgentRouteResult | undefined;
   if (!effectiveInput.agent || effectiveInput.agent.trim() === "") {
-    throw new PatchWardenError(
-      "agent_required",
-      "create_task requires an agent name.",
-      "Pass a configured agent name, or use assessment_id from a prior assess_only call."
-    );
+    const configuredAgents = Object.keys(config.agents);
+    const routeResult = routeAgent({
+      goal: effectiveInput.goal,
+      scope: effectiveInput.scope,
+      inline_plan: effectiveInput.inline_plan,
+      template: effectiveInput.template,
+      configuredAgents,
+    });
+    effectiveInput.agent = routeResult.recommended_agent;
+    agentSelectionReason = {
+      recommended_agent: routeResult.recommended_agent,
+      reason: routeResult.reason,
+      fallback: routeResult.fallback,
+    };
   }
 
   const planSources = [
@@ -564,6 +610,18 @@ export function createTask(input: CreateTaskInput): CreateTaskResult {
     last_heartbeat_at: new Date().toISOString(),
     current_command: null as string | null,
     error: null as string | null,
+    // v0.7.2: 验收标准绑定到任务创建
+    goal: effectiveInput.goal || null,
+    scope: effectiveInput.scope ?? null,
+    forbidden: effectiveInput.forbidden ?? null,
+    verification: effectiveInput.verification ?? null,
+    done_evidence: effectiveInput.done_evidence ?? null,
+    acceptance_status: null as AcceptanceStatus,
+    // v0.8.0: Goal Session 关联
+    goal_id: effectiveInput.goal_id ?? null,
+    subgoal_id: effectiveInput.subgoal_id ?? null,
+    // v1.0.0: Agent routing decision (only present when agent was auto-routed)
+    ...(agentSelectionReason ? { agent_selection_reason: agentSelectionReason } : {}),
   };
 
   writeFileSync(statusFile, JSON.stringify(statusData, null, 2), "utf-8");

@@ -12,6 +12,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+// v0.7.2: tasks complete with "done_by_agent" (pending acceptance) instead of "done".
+// Both are valid successful completion statuses for lifecycle smoke tests.
+const isDoneStatus = (s) => s === "done" || s === "done_by_agent";
+
 const tempRoot = mkdtempSync(join(tmpdir(), "patchwarden-lifecycle-"));
 const workspaceRoot = join(tempRoot, "workspace");
 const repoPath = join(workspaceRoot, "repo");
@@ -178,7 +182,7 @@ try {
       verify_commands: ["node --check main.js", "node --check second.js"],
     });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Writer task ended ${result.status}: ${result.error}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Writer task ended ${result.status}: ${result.error}`);
     const status = getTaskStatus(task.task_id);
     const changed = status.changed_files || [];
     if (!changed.some((file) => file.path === "README.md" && file.change === "modified")) {
@@ -253,7 +257,7 @@ try {
     });
     const result = await runTask(task.task_id);
     const verify = JSON.parse(readFileSync(join(task.path, "verify.json"), "utf-8"));
-    if (result.status !== "done" || verify.status !== "passed" || verify.commands.length !== 1) {
+    if (!isDoneStatus(result.status) || verify.status !== "passed" || verify.commands.length !== 1) {
       throw new Error(`Legacy verification mismatch: ${JSON.stringify({ result, verify })}`);
     }
     if (verify.commands[0].cwd !== repoPath || !("stdout_tail" in verify.commands[0]) || !("stderr_tail" in verify.commands[0])) {
@@ -265,7 +269,7 @@ try {
     const plan = savePlan({ title: "No diff", content: "Do not change files." });
     const task = createTask({ plan_id: plan.plan_id, agent: "noop", repo_path: "repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`No-op task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`No-op task failed: ${JSON.stringify(result)}`);
     const diff = getDiff(task.task_id);
     const verify = JSON.parse(readFileSync(join(task.path, "verify.json"), "utf-8"));
     if (verify.status !== "skipped") throw new Error(`Expected skipped verification: ${JSON.stringify(verify)}`);
@@ -286,7 +290,7 @@ try {
     const plan = savePlan({ title: "Large diff", content: "Create a large text file." });
     const task = createTask({ plan_id: plan.plan_id, agent: "largewriter", repo_path: "repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Large task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Large task failed: ${JSON.stringify(result)}`);
     const diff = getDiff(task.task_id);
     const patchSize = readFileSync(join(task.path, "diff.patch"), "utf-8").length;
     if (!diff.truncated || !diff.patch_head || !diff.diff_patch_path || patchSize <= diff.content.length) {
@@ -298,7 +302,7 @@ try {
     const plan = savePlan({ title: "Non-Git evidence", content: "Modify files in a non-Git repository." });
     const task = createTask({ plan_id: plan.plan_id, agent: "writer", repo_path: "plain-repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Non-Git task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Non-Git task failed: ${JSON.stringify(result)}`);
     const diff = getDiff(task.task_id);
     if (
       diff.patch_mode !== "hash_only" ||
@@ -313,7 +317,7 @@ try {
     const plan = savePlan({ title: "Binary evidence", content: "Create a binary fixture." });
     const task = createTask({ plan_id: plan.plan_id, agent: "binarywriter", repo_path: "repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Binary task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Binary task failed: ${JSON.stringify(result)}`);
     const diff = getDiff(task.task_id);
     if (diff.patch_mode !== "textual" || !diff.content.includes("GIT binary patch")) {
       throw new Error(`Binary patch evidence mismatch: ${JSON.stringify(diff)}`);
@@ -324,7 +328,7 @@ try {
     const plan = savePlan({ title: "Artifact hygiene", content: "Generate representative task outputs." });
     const task = createTask({ plan_id: plan.plan_id, agent: "artifactwriter", repo_path: "repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Artifact task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Artifact task failed: ${JSON.stringify(result)}`);
     const standard = getTaskSummary(task.task_id);
     const compact = getTaskSummary(task.task_id, { view: "compact", max_items: 1 });
     const counts = standard.artifact_hygiene?.counts || {};
@@ -353,7 +357,7 @@ try {
     const plan = savePlan({ title: "Delete fixture", content: "Delete the designated fixture file." });
     const task = createTask({ plan_id: plan.plan_id, agent: "deleter", repo_path: "repo" });
     const result = await runTask(task.task_id);
-    if (result.status !== "done") throw new Error(`Delete task failed: ${JSON.stringify(result)}`);
+    if (!isDoneStatus(result.status)) throw new Error(`Delete task failed: ${JSON.stringify(result)}`);
     const diff = getDiff(task.task_id);
     if (!diff.file_stats?.some((file) => file.path === "delete-me.txt" && file.status === "deleted")) {
       throw new Error(`Deleted file stats missing: ${JSON.stringify(diff.file_stats)}`);
@@ -504,7 +508,7 @@ try {
     const task = createTask({ plan_id: plan.plan_id, agent: "noop", repo_path: "repo", verify_commands: ["node --check main.js"] });
     const result = await runTask(task.task_id);
 
-    if (result.status !== "done") {
+    if (!isDoneStatus(result.status)) {
       throw new Error(`Expected done, got: ${JSON.stringify(result)}`);
     }
     const structured = JSON.parse(readFileSync(join(task.path, "result.json"), "utf-8"));

@@ -76,7 +76,7 @@ try {
     ready: false,
     pid: null,
     tool_profile: "chatgpt_direct",
-    tool_count: 9,
+    tool_count: 13,
     tools_ready: true,
   }), "utf8");
   writeFileSync(join(directRuntime, "tunnel-client.pid"), String(fakeTunnel.pid), "utf8");
@@ -114,7 +114,7 @@ try {
     reason_code: "stale_fixture",
     last_error: "stale failure",
     tool_profile: "chatgpt_core",
-    tool_count: 16,
+    tool_count: 21,
     tools_ready: true,
   }), "utf8");
   healthServer = spawn(
